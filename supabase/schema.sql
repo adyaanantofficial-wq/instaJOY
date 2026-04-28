@@ -1,162 +1,273 @@
 -- Supabase PostgreSQL schema for instaJOY
 -- Main tables: profiles, posts, likes, comments, follows, notifications
--- Read-only guest access; authenticated users can modify only own data.
+-- Guest mode is read-only. Authenticated users can modify only their own data.
 
--- Profiles table linked to Supabase Auth
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  username text NOT NULL UNIQUE,
+create extension if not exists pgcrypto;
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text not null unique,
   display_name text,
   bio text,
   avatar_url text,
   fcm_token text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles (username);
+create index if not exists idx_profiles_username on public.profiles (username);
 
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  requested_username text;
+  candidate_username text;
+  display_name_value text;
+begin
+  requested_username :=
+    lower(regexp_replace(
+      coalesce(new.raw_user_meta_data ->> 'username', split_part(new.email, '@', 1), 'user'),
+      '[^a-z0-9._]+',
+      '',
+      'g'
+    ));
 
-CREATE POLICY "Profiles public read" ON public.profiles
-  FOR SELECT USING (true);
+  if requested_username is null or length(requested_username) < 3 then
+    requested_username := 'user_' || substring(replace(new.id::text, '-', '') from 1 for 8);
+  end if;
 
-CREATE POLICY "Profiles self manage" ON public.profiles
-  FOR INSERT WITH CHECK (auth.uid() = id)
-  FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id)
-  FOR DELETE USING (auth.uid() = id);
+  candidate_username := left(requested_username, 24);
 
--- Posts table
-CREATE TABLE IF NOT EXISTS public.posts (
-  id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  type text NOT NULL CHECK (type IN ('text', 'image', 'reel')),
+  while exists (select 1 from public.profiles where username = candidate_username) loop
+    candidate_username := left(requested_username, 20) || '_' || substring(replace(new.id::text, '-', '') from 1 for 4);
+  end loop;
+
+  display_name_value := coalesce(new.raw_user_meta_data ->> 'display_name', new.raw_user_meta_data ->> 'username', candidate_username);
+
+  insert into public.profiles (id, username, display_name)
+  values (new.id, candidate_username, display_name_value)
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+drop trigger if exists set_profiles_updated_at on public.profiles;
+create trigger set_profiles_updated_at
+  before update on public.profiles
+  for each row execute procedure public.set_updated_at();
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "Profiles public read" on public.profiles;
+create policy "Profiles public read" on public.profiles
+  for select
+  using (true);
+
+drop policy if exists "Profiles self insert" on public.profiles;
+create policy "Profiles self insert" on public.profiles
+  for insert
+  with check (auth.uid() = id);
+
+drop policy if exists "Profiles self update" on public.profiles;
+create policy "Profiles self update" on public.profiles
+  for update
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
+
+drop policy if exists "Profiles self delete" on public.profiles;
+create policy "Profiles self delete" on public.profiles
+  for delete
+  using (auth.uid() = id);
+
+create table if not exists public.posts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  type text not null check (type in ('text', 'image', 'reel')),
   category text,
   caption text,
   content text,
   image_url text,
   media_url text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts (created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_posts_user_id ON public.posts (user_id);
+create index if not exists idx_posts_created_at on public.posts (created_at desc);
+create index if not exists idx_posts_user_id on public.posts (user_id);
 
-ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+drop trigger if exists set_posts_updated_at on public.posts;
+create trigger set_posts_updated_at
+  before update on public.posts
+  for each row execute procedure public.set_updated_at();
 
-CREATE POLICY "Posts public read" ON public.posts
-  FOR SELECT USING (true);
+alter table public.posts enable row level security;
 
-CREATE POLICY "Posts insert own" ON public.posts
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+drop policy if exists "Posts public read" on public.posts;
+create policy "Posts public read" on public.posts
+  for select
+  using (true);
 
-CREATE POLICY "Posts update own" ON public.posts
-  FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+drop policy if exists "Posts insert own" on public.posts;
+create policy "Posts insert own" on public.posts
+  for insert
+  with check (auth.uid() = user_id);
 
-CREATE POLICY "Posts delete own" ON public.posts
-  FOR DELETE USING (auth.uid() = user_id);
+drop policy if exists "Posts update own" on public.posts;
+create policy "Posts update own" on public.posts
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
--- Likes table
-CREATE TABLE IF NOT EXISTS public.likes (
-  id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, post_id)
+drop policy if exists "Posts delete own" on public.posts;
+create policy "Posts delete own" on public.posts
+  for delete
+  using (auth.uid() = user_id);
+
+create table if not exists public.likes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  post_id uuid not null references public.posts(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (user_id, post_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_likes_post_id ON public.likes (post_id);
-CREATE INDEX IF NOT EXISTS idx_likes_user_id ON public.likes (user_id);
+create index if not exists idx_likes_post_id on public.likes (post_id);
+create index if not exists idx_likes_user_id on public.likes (user_id);
 
-ALTER TABLE public.likes ENABLE ROW LEVEL SECURITY;
+alter table public.likes enable row level security;
 
-CREATE POLICY "Likes public read" ON public.likes
-  FOR SELECT USING (true);
+drop policy if exists "Likes public read" on public.likes;
+create policy "Likes public read" on public.likes
+  for select
+  using (true);
 
-CREATE POLICY "Likes insert own" ON public.likes
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+drop policy if exists "Likes insert own" on public.likes;
+create policy "Likes insert own" on public.likes
+  for insert
+  with check (auth.uid() = user_id);
 
-CREATE POLICY "Likes delete own" ON public.likes
-  FOR DELETE USING (auth.uid() = user_id);
+drop policy if exists "Likes delete own" on public.likes;
+create policy "Likes delete own" on public.likes
+  for delete
+  using (auth.uid() = user_id);
 
--- Comments table
-CREATE TABLE IF NOT EXISTS public.comments (
-  id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
-  body text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+create table if not exists public.comments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  post_id uuid not null references public.posts(id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_comments_post_id ON public.comments (post_id);
-CREATE INDEX IF NOT EXISTS idx_comments_user_id ON public.comments (user_id);
+create index if not exists idx_comments_post_id on public.comments (post_id);
+create index if not exists idx_comments_user_id on public.comments (user_id);
 
-ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
+alter table public.comments enable row level security;
 
-CREATE POLICY "Comments public read" ON public.comments
-  FOR SELECT USING (true);
+drop policy if exists "Comments public read" on public.comments;
+create policy "Comments public read" on public.comments
+  for select
+  using (true);
 
-CREATE POLICY "Comments insert own" ON public.comments
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+drop policy if exists "Comments insert own" on public.comments;
+create policy "Comments insert own" on public.comments
+  for insert
+  with check (auth.uid() = user_id);
 
-CREATE POLICY "Comments delete own" ON public.comments
-  FOR DELETE USING (auth.uid() = user_id);
+drop policy if exists "Comments delete own" on public.comments;
+create policy "Comments delete own" on public.comments
+  for delete
+  using (auth.uid() = user_id);
 
--- Follows table
-CREATE TABLE IF NOT EXISTS public.follows (
-  id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  follower_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  following_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (follower_id, following_id)
+create table if not exists public.follows (
+  id uuid primary key default gen_random_uuid(),
+  follower_id uuid not null references public.profiles(id) on delete cascade,
+  following_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (follower_id, following_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_follows_follower ON public.follows (follower_id);
-CREATE INDEX IF NOT EXISTS idx_follows_following ON public.follows (following_id);
+create index if not exists idx_follows_follower on public.follows (follower_id);
+create index if not exists idx_follows_following on public.follows (following_id);
 
-ALTER TABLE public.follows ENABLE ROW LEVEL SECURITY;
+alter table public.follows enable row level security;
 
-CREATE POLICY "Follows public read" ON public.follows
-  FOR SELECT USING (true);
+drop policy if exists "Follows public read" on public.follows;
+create policy "Follows public read" on public.follows
+  for select
+  using (true);
 
-CREATE POLICY "Follows insert own" ON public.follows
-  FOR INSERT WITH CHECK (auth.uid() = follower_id);
+drop policy if exists "Follows insert own" on public.follows;
+create policy "Follows insert own" on public.follows
+  for insert
+  with check (auth.uid() = follower_id);
 
-CREATE POLICY "Follows delete own" ON public.follows
-  FOR DELETE USING (auth.uid() = follower_id);
+drop policy if exists "Follows delete own" on public.follows;
+create policy "Follows delete own" on public.follows
+  for delete
+  using (auth.uid() = follower_id);
 
--- Notifications table
-CREATE TABLE IF NOT EXISTS public.notifications (
-  id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  actor_id uuid REFERENCES public.profiles(id),
-  type text NOT NULL,
-  entity_type text NOT NULL,
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id),
+  type text not null,
+  entity_type text not null,
   entity_id uuid,
-  message text NOT NULL,
-  read boolean NOT NULL DEFAULT false,
+  message text not null,
+  read boolean not null default false,
   meta jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz not null default now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications (user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_read ON public.notifications (user_id, read);
+create index if not exists idx_notifications_user on public.notifications (user_id);
+create index if not exists idx_notifications_read on public.notifications (user_id, read);
 
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+alter table public.notifications enable row level security;
 
-CREATE POLICY "Notifications owner read" ON public.notifications
-  FOR SELECT USING (auth.uid() = user_id);
+drop policy if exists "Notifications owner read" on public.notifications;
+create policy "Notifications owner read" on public.notifications
+  for select
+  using (auth.uid() = user_id);
 
-CREATE POLICY "Notifications insert service" ON public.notifications
-  FOR INSERT WITH CHECK (auth.role() = 'service_role');
+drop policy if exists "Notifications owner update" on public.notifications;
+create policy "Notifications owner update" on public.notifications
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
-CREATE POLICY "Notifications delete own" ON public.notifications
-  FOR DELETE USING (auth.uid() = user_id);
+drop policy if exists "Notifications insert service" on public.notifications;
+create policy "Notifications insert service" on public.notifications
+  for insert
+  with check (auth.role() = 'service_role');
 
--- Utility view for feed
-CREATE VIEW IF NOT EXISTS public.post_feed AS
-SELECT
+drop policy if exists "Notifications delete own" on public.notifications;
+create policy "Notifications delete own" on public.notifications
+  for delete
+  using (auth.uid() = user_id);
+
+create or replace view public.post_feed as
+select
   posts.id,
   posts.user_id,
   posts.type,
@@ -168,7 +279,8 @@ SELECT
   posts.created_at,
   profiles.username,
   profiles.avatar_url
-FROM public.posts
-JOIN public.profiles ON posts.user_id = profiles.id;
+from public.posts
+join public.profiles on posts.user_id = profiles.id;
 
-GRANT SELECT ON public.post_feed TO anon;
+grant select on public.post_feed to anon;
+grant select on public.profiles, public.posts, public.likes, public.comments, public.follows to anon;
