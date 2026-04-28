@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#f46a3b">
+    <meta name="description" content="instaJOY - Professional Social Media Feed">
+    <title>instaJOY - Feed</title>
+    <link rel="icon" href="ilogo.png">
+    <link rel="stylesheet" href="frontend/css/app.css">
+    <style>
+        /* Instagram-like professional styles */
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #fafafa;
+            color: #262626;
+        }
+
+        .splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #f46a3b 0%, #ff9f43 100%);
+            color: white;
+            z-index: 9999;
+            transition: opacity 0.4s ease;
+        }
+
+        .splash-screen.is-hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .splash-logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .app-shell {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            background: #fafafa;
+        }
+
+        /* Topbar */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: white;
+            border-bottom: 1px solid #dbdbdb;
+            height: 56px;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 10;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .brand-logo {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+        }
+
+        .brand-name {
+            font-weight: 600;
+            font-size: 18px;
+            letter-spacing: -0.3px;
+        }
+
+        .brand-subtitle {
+            font-size: 12px;
+            color: #65676b;
+        }
+
+        #topbarAction {
+            padding: 8px 12px;
+            background: none;
+            border: none;
+            color: #0a66c2;
+            cursor: pointer;
+            font-size: 18px;
+            transition: opacity 0.2s;
+        }
+
+        #topbarAction:hover {
+            opacity: 0.7;
+        }
+
+        /* Main shell */
+        .main-shell {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 70px;
+        }
+
+        .main-shell::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .main-shell::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .main-shell::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
+        }
+
+        /* Views */
+        .view {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .view:not([hidden]) {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .view-intro {
+            padding: 16px;
+            background: white;
+            border-bottom: 1px solid #dbdbdb;
+            text-align: center;
+        }
+
+        .view-intro h2 {
+            margin: 0 0 8px 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .view-intro p {
+            margin: 0;
+            font-size: 14px;
+            color: #65676b;
+        }
+
+        /* Feed Stack */
+        .stack-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        /* Feed Card */
+        .feed-card {
+            background: white;
+            border-bottom: 1px solid #dbdbdb;
+            margin-bottom: 0;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .card-author {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+            cursor: pointer;
+        }
+
+        .card-author:hover {
+            opacity: 0.8;
+        }
+
+        .card-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e4e6eb;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+
+        .card-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .card-username {
+            font-weight: 600;
+            font-size: 14px;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card-timestamp {
+            font-size: 12px;
+            color: #65676b;
+            margin-top: 2px;
+        }
+
+        .card-menu {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            padding: 0;
+            color: #65676b;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+
+        .card-menu:hover {
+            background: #f0f2f5;
+        }
+
+        /* Card Content */
+        .card-content {
+            padding: 12px 16px;
+        }
+
+        .card-text {
+            font-size: 15px;
+            line-height: 1.5;
+            word-break: break-word;
+            margin: 0 0 12px 0;
+        }
+
+        .card-image {
+            width: 100%;
+            max-height: 400px;
+            object-fit: cover;
+            background: #f0f0f0;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        /* Card Actions */
+        .card-actions {
+            display: flex;
+            gap: 0;
+            padding: 8px 16px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .action-button {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: #65676b;
+            border-radius: 4px;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .action-button:hover {
+            background: #f0f2f5;
+            color: #262626;
+        }
+
+        .action-button.liked {
+            color: #e4405f;
+        }
+
+        .action-icon {
+            font-size: 18px;
+        }
+
+        /* Engagement Stats */
+        .card-stats {
+            display: flex;
+            gap: 16px;
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #65676b;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .stat-item {
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .stat-item:hover {
+            color: #262626;
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: white;
+            border-top: 1px solid #dbdbdb;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            z-index: 100;
+            gap: 0;
+        }
+
+        .nav-button {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            height: 100%;
+            border: none;
+            background: none;
+            cursor: pointer;
+            color: #65676b;
+            font-size: 11px;
+            gap: 4px;
+            transition: color 0.2s, background 0.2s;
+            padding: 4px 0;
+        }
+
+        .nav-button:hover,
+        .nav-button.active {
+            color: #f46a3b;
+        }
+
+        .nav-button.active {
+            background: rgba(244, 106, 59, 0.05);
+        }
+
+        .nav-button span:first-child {
+            font-size: 20px;
+        }
+
+        /* Skeleton Loader */
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .skeleton-card {
+            background: white;
+            border-bottom: 1px solid #dbdbdb;
+            padding: 12px 16px;
+        }
+
+        .skeleton-header {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .skeleton-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .skeleton-info {
+            flex: 1;
+        }
+
+        .skeleton-name {
+            height: 12px;
+            margin-bottom: 8px;
+            border-radius: 2px;
+            width: 60%;
+        }
+
+        .skeleton-time {
+            height: 10px;
+            border-radius: 2px;
+            width: 40%;
+        }
+
+        .skeleton-text {
+            height: 60px;
+            border-radius: 2px;
+            margin: 12px 0;
+        }
+
+        .skeleton-image {
+            height: 200px;
+            border-radius: 4px;
+            margin: 12px 0;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #65676b;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0 0 8px 0;
+            color: #262626;
+        }
+
+        .empty-state p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Guest Badge */
+        .guest-badge {
+            display: block;
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px 16px;
+            margin: 12px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        #homeLoadMore {
+            width: calc(100% - 32px);
+            margin: 16px;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .topbar {
+                height: 48px;
+                padding: 8px 12px;
+            }
+
+            .brand-logo {
+                width: 28px;
+                height: 28px;
+            }
+
+            .brand-name {
+                font-size: 16px;
+            }
+
+            .card-avatar {
+                width: 36px;
+                height: 36px;
+            }
+
+            .card-actions {
+                gap: 8px;
+            }
+
+            .action-button {
+                gap: 6px;
+                font-size: 13px;
+            }
+
+            .action-icon {
+                font-size: 16px;
+            }
+
+            .bottom-nav {
+                height: 56px;
+            }
+
+            .nav-button {
+                font-size: 10px;
+            }
+
+            .nav-button span:first-child {
+                font-size: 18px;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .main-shell {
+                padding-bottom: 60px;
+            }
+
+            .card-text {
+                font-size: 14px;
+            }
+
+            .action-button {
+                padding: 6px 8px;
+            }
+
+            .card-stats {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="splashScreen" class="splash-screen">
+        <img src="ilogo.png" alt="instaJOY logo" class="splash-logo">
+        <h1>instaJOY</h1>
+        <p>Share bright moments, ideas, and everyday fun.</p>
+    </div>
+
+    <div id="appShell" class="app-shell">
+        <header class="topbar">
+            <div class="brand">
+                <img src="ilogo.png" alt="instaJOY logo" class="brand-logo">
+                <div>
+                    <div class="brand-name">instaJOY</div>
+                    <div id="brandSubtitle" class="brand-subtitle">Home</div>
+                </div>
+            </div>
+            <button id="topbarAction" type="button" title="Refresh">🔄</button>
+        </header>
+
+        <main class="main-shell">
+            <!-- Auth View (unused for direct entry) -->
+            <section id="authView" class="view auth-view" hidden></section>
+
+            <!-- Home Feed View -->
+            <section id="homeView" class="view">
+                <div class="view-intro">
+                    <h2>Fresh Joy</h2>
+                    <p>Posts from your network and trending content worldwide</p>
+                </div>
+                <div class="guest-badge" id="guestBadge" hidden>👀 Guest Mode - View Only</div>
+                <ul id="homeFeed" class="stack-list"></ul>
+                <div id="homeEmpty" class="empty-state" hidden>
+                    <div class="empty-state-icon">📝</div>
+                    <h3>No posts yet</h3>
+                    <p>Start following people to see their posts here</p>
+                </div>
+                <button id="homeLoadMore" class="action-button" type="button" hidden>Load more posts</button>
+            </section>
+
+            <!-- Reels View -->
+            <section id="reelsView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Reels</h2>
+                    <p>Short, engaging video clips</p>
+                </div>
+                <ul id="reelsFeed" class="stack-list"></ul>
+                <div id="reelsEmpty" class="empty-state" hidden>
+                    <div class="empty-state-icon">🎬</div>
+                    <h3>No reels yet</h3>
+                    <p>Check back soon for video content</p>
+                </div>
+            </section>
+
+            <!-- Search View -->
+            <section id="searchView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Search</h2>
+                    <p>Find people and content</p>
+                </div>
+                <div style="padding: 16px;">
+                    <input id="searchInput" type="search" placeholder="Search users or posts..." style="width: 100%; padding: 12px; border: 1px solid #dbdbdb; border-radius: 20px; font-size: 14px;">
+                </div>
+                <ul id="searchResults" class="stack-list" style="padding: 16px;"></ul>
+                <div id="searchEmpty" class="empty-state" hidden>
+                    <div class="empty-state-icon">🔍</div>
+                    <h3>Search to discover</h3>
+                    <p>Find people and posts</p>
+                </div>
+            </section>
+
+            <!-- Messages View -->
+            <section id="messagesView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Messages</h2>
+                    <p>Direct messages with your connections</p>
+                </div>
+                <div id="messagesEmpty" class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    <h3>Messages</h3>
+                    <p id="messagesEmptyText">Your messages will appear here</p>
+                </div>
+            </section>
+
+            <!-- Notifications View -->
+            <section id="notificationsView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Notifications</h2>
+                    <p>Your activity updates</p>
+                </div>
+                <ul id="notificationsList" class="stack-list"></ul>
+                <div id="notificationsEmpty" class="empty-state" hidden>
+                    <div class="empty-state-icon">🔔</div>
+                    <h3>No notifications</h3>
+                    <p>You're all caught up</p>
+                </div>
+            </section>
+
+            <!-- Profile View -->
+            <section id="profileView" class="view" hidden>
+                <div id="profileContent" style="padding: 16px;">
+                    <div id="profileEmpty" class="empty-state">
+                        <div class="empty-state-icon">👤</div>
+                        <h3>Profile</h3>
+                        <p>Your profile information appears here</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav id="bottomNav" class="bottom-nav">
+            <button class="nav-button active" type="button" data-view="home" title="Home">
+                <span>🏠</span>
+                <span>Home</span>
+            </button>
+            <button class="nav-button" type="button" data-view="reels" title="Reels">
+                <span>🎬</span>
+                <span>Reels</span>
+            </button>
+            <button class="nav-button" type="button" data-view="search" title="Search">
+                <span>🔍</span>
+                <span>Search</span>
+            </button>
+            <button class="nav-button" type="button" data-view="messages" title="Messages">
+                <span>💬</span>
+                <span>Messages</span>
+            </button>
+            <button class="nav-button" type="button" data-view="notifications" title="Notifications">
+                <span>🔔</span>
+                <span>Alerts</span>
+            </button>
+            <button class="nav-button" type="button" data-view="profile" title="Profile">
+                <span>👤</span>
+                <span>Profile</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Toast Host -->
+    <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- Demo data for guest mode -->
+    <script>
+        window.INSTAJOY_DEMO_DATA = {
+            posts: [
+                {
+                    id: 'demo1',
+                    author: {
+                        id: 'user1',
+                        username: 'sarah_creative',
+                        avatar: 'ilogo.png'
+                    },
+                    content: {
+                        text: '☀️ Nothing beats a sunny morning with a fresh coffee! Life is beautiful when you slow down to appreciate it.',
+                        image: null
+                    },
+                    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
+                    likes: 234,
+                    comments: 18,
+                    shares: 5,
+                    liked: false
+                },
+                {
+                    id: 'demo2',
+                    author: {
+                        id: 'user2',
+                        username: 'alex_adventures',
+                        avatar: 'ilogo.png'
+                    },
+                    content: {
+                        text: '🏔️ Mountain hiking is the best therapy! Fresh air, amazing views, and clarity for the soul.',
+                        image: null
+                    },
+                    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000),
+                    likes: 567,
+                    comments: 42,
+                    shares: 23,
+                    liked: false
+                },
+                {
+                    id: 'demo3',
+                    author: {
+                        id: 'user3',
+                        username: 'emma_vibes',
+                        avatar: 'ilogo.png'
+                    },
+                    content: {
+                        text: '🎨 Just finished this new design project! So proud of the creative journey. Art is life! 💫',
+                        image: null
+                    },
+                    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
+                    likes: 892,
+                    comments: 156,
+                    shares: 89,
+                    liked: false
+                },
+                {
+                    id: 'demo4',
+                    author: {
+                        id: 'user4',
+                        username: 'john_tech',
+                        avatar: 'ilogo.png'
+                    },
+                    content: {
+                        text: '💻 Just launched my new web project! Excited to share it with everyone. Check it out and let me know your thoughts!',
+                        image: null
+                    },
+                    timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
+                    likes: 345,
+                    comments: 67,
+                    shares: 45,
+                    liked: false
+                },
+                {
+                    id: 'demo5',
+                    author: {
+                        id: 'user5',
+                        username: 'maya_mindful',
+                        avatar: 'ilogo.png'
+                    },
+                    content: {
+                        text: '🧘 Remember to take time for yourself today. Your mental health matters. Self-care is not selfish! ✨',
+                        image: null
+                    },
+                    timestamp: new Date(Date.now() - 36 * 60 * 60 * 1000),
+                    likes: 1203,
+                    comments: 234,
+                    shares: 156,
+                    liked: false
+                }
+            ]
+        };
+    </script>
+
+    <!-- Scripts in order -->
+    <script src="frontend/js/config.js"></script>
+    <script src="frontend/js/app.js"></script>
+</body>
+</html>

@@ -87,12 +87,12 @@
                 await enterAuthedApp(true);
             } else {
                 if (dom.landingPage) dom.landingPage.hidden = false;
-                dom.appShell.hidden = true;
+                if (dom.appShell) dom.appShell.hidden = true;
             }
         } catch (error) {
             clearSession();
             if (dom.landingPage) dom.landingPage.hidden = false;
-            dom.appShell.hidden = true;
+            if (dom.appShell) dom.appShell.hidden = true;
             showToast(error.message || 'Session expired. Please log in again.', 'error');
         } finally {
             window.setTimeout(() => {
@@ -196,9 +196,8 @@
         localStorage.removeItem('instajoy_access_token');
         localStorage.removeItem('instajoy_refresh_token');
         localStorage.removeItem('instajoy_user');
-        // Safely reload the current page to initialize guest mode
-        window.location.hash = '';
-        window.location.reload();
+        // Redirect to dedicated guest home page
+        window.location.href = 'home.html';
     }
 
     function bindStaticEvents() {
@@ -214,34 +213,39 @@
         
         document.body.addEventListener('click', handleBodyClick);
 
-        dom.topbarAction.addEventListener('click', handleTopbarAction);
-        dom.homeLoadMore.addEventListener('click', () => loadHomeFeed());
-        dom.reelsLoadMore.addEventListener('click', () => loadReels());
-        dom.messagesRefresh.addEventListener('click', () => loadConversations(true));
-        dom.markAllNotifications.addEventListener('click', markAllNotificationsRead);
-        dom.profileRefresh.addEventListener('click', () => {
-            if (state.profile.username) {
-                loadProfile(state.profile.username, true);
-            }
-        });
-        dom.openCreateButton.addEventListener('click', openCreateModal);
-        dom.createForm.addEventListener('submit', handleCreateSubmit);
-        dom.imageInput.addEventListener('change', handleImageSelection);
-        dom.reelInput.addEventListener('change', handleReelSelection);
-        dom.commentForm.addEventListener('submit', handleCommentSubmit);
-        dom.messageComposer.addEventListener('submit', handleMessageSubmit);
-        dom.searchInput.addEventListener('input', handleSearchInput);
-        dom.profileEditForm.addEventListener('submit', handleProfileEditSubmit);
-        dom.profileImageInput.addEventListener('change', handleProfileImageSelection);
-        dom.chatBackButton.addEventListener('click', () => {
-            state.messages.activeUser = null;
-            renderConversations();
-            renderActiveConversation();
-        });
+        dom.topbarAction?.addEventListener('click', handleTopbarAction);
+        dom.homeLoadMore?.addEventListener('click', () => loadHomeFeed());
+        dom.reelsLoadMore?.addEventListener('click', () => loadReels());
+        dom.messagesRefresh?.addEventListener('click', () => loadConversations(true));
+        dom.markAllNotifications?.addEventListener('click', markAllNotificationsRead);
+        if (dom.profileRefresh) {
+            dom.profileRefresh.addEventListener('click', () => {
+                if (state.profile.username) {
+                    loadProfile(state.profile.username, true);
+                }
+            });
+        }
+        dom.openCreateButton?.addEventListener('click', openCreateModal);
+        dom.createForm?.addEventListener('submit', handleCreateSubmit);
+        dom.imageInput?.addEventListener('change', handleImageSelection);
+        dom.reelInput?.addEventListener('change', handleReelSelection);
+        dom.commentForm?.addEventListener('submit', handleCommentSubmit);
+        dom.messageComposer?.addEventListener('submit', handleMessageSubmit);
+        dom.searchInput?.addEventListener('input', handleSearchInput);
+        dom.profileEditForm?.addEventListener('submit', handleProfileEditSubmit);
+        dom.profileImageInput?.addEventListener('change', handleProfileImageSelection);
+        if (dom.chatBackButton) {
+            dom.chatBackButton.addEventListener('click', () => {
+                state.messages.activeUser = null;
+                renderConversations();
+                renderActiveConversation();
+            });
+        }
     }
 
     function setupObservers() {
-        pagerObserver = new IntersectionObserver(
+        if (dom.homeLoadMore || dom.reelsLoadMore) {
+            pagerObserver = new IntersectionObserver(
             (entries) => {
                 entries.forEach((entry) => {
                     if (!entry.isIntersecting) {
@@ -260,10 +264,12 @@
             { rootMargin: '320px 0px' }
         );
 
-        pagerObserver.observe(dom.homeLoadMore);
-        pagerObserver.observe(dom.reelsLoadMore);
+            if (dom.homeLoadMore) pagerObserver.observe(dom.homeLoadMore);
+            if (dom.reelsLoadMore) pagerObserver.observe(dom.reelsLoadMore);
+        }
 
-        reelObserver = new IntersectionObserver(
+        if (typeof IntersectionObserver !== 'undefined') {
+            reelObserver = new IntersectionObserver(
             (entries) => {
                 entries.forEach((entry) => {
                     const video = entry.target;
@@ -283,7 +289,8 @@
                 });
             },
             { threshold: [0.12, 0.72] }
-        );
+            );
+        }
     }
 
     async function hydrateSession() {
@@ -293,8 +300,15 @@
     }
 
     async function enterAuthedApp(useHash) {
-        dom.appShell.hidden = false;
-        dom.bottomNav.hidden = false;
+        if (dom.appShell) dom.appShell.hidden = false;
+        if (dom.bottomNav) dom.bottomNav.hidden = false;
+        
+        // Show guest badge if in guest mode
+        const guestBadge = document.getElementById('guestBadge');
+        if (guestBadge && isGuestMode()) {
+            guestBadge.hidden = false;
+        }
+        
         if (useHash) {
             const handled = await resolveHashRoute();
             if (handled) {
@@ -308,11 +322,11 @@
     function showAuthView() {
         state.activeView = 'auth';
         if (dom.landingPage) dom.landingPage.hidden = true;
-        dom.appShell.hidden = false;
-        dom.bottomNav.hidden = true;
-        dom.authView.hidden = false;
-        dom.brandSubtitle.textContent = 'Welcome';
-        dom.topbarAction.hidden = true;
+        if (dom.appShell) dom.appShell.hidden = false;
+        if (dom.bottomNav) dom.bottomNav.hidden = true;
+        if (dom.authView) dom.authView.hidden = false;
+        if (dom.brandSubtitle) dom.brandSubtitle.textContent = 'Welcome';
+        if (dom.topbarAction) dom.topbarAction.hidden = true;
 
         [
             dom.homeView,
@@ -322,7 +336,7 @@
             dom.notificationsView,
             dom.profileView,
         ].forEach((view) => {
-            view.hidden = true;
+            if (view) view.hidden = true;
         });
     }
 
@@ -334,9 +348,9 @@
         }
 
         state.activeView = viewName;
-        dom.authView.hidden = true;
-        dom.bottomNav.hidden = false;
-        dom.topbarAction.hidden = false;
+        if (dom.authView) dom.authView.hidden = true;
+        if (dom.bottomNav) dom.bottomNav.hidden = false;
+        if (dom.topbarAction) dom.topbarAction.hidden = false;
 
         const viewMap = {
             home: dom.homeView,
@@ -348,7 +362,7 @@
         };
 
         Object.entries(viewMap).forEach(([key, element]) => {
-            element.hidden = key !== viewName;
+            if (element) element.hidden = key !== viewName;
         });
 
         updateNav(viewName);
@@ -589,39 +603,62 @@
         }
 
         state.home.loading = true;
-        dom.homeLoadMore.textContent = 'Loading...';
-        dom.homeLoadMore.hidden = false;
+        if (dom.homeLoadMore) {
+            dom.homeLoadMore.textContent = 'Loading...';
+            dom.homeLoadMore.hidden = false;
+        }
 
         try {
-            const query = new URLSearchParams({ limit: '8' });
-            if (state.home.cursor) {
-                query.set('cursor', state.home.cursor);
-            }
+            if (isGuestMode()) {
+                // Load demo data for guest mode
+                const demoData = window.INSTAJOY_DEMO_DATA || { posts: [] };
+                state.home.items = demoData.posts || [];
+                state.home.hasMore = false;
+            } else {
+                const query = new URLSearchParams({ limit: '8' });
+                if (state.home.cursor) {
+                    query.set('cursor', state.home.cursor);
+                }
 
-            const response = await apiRequest(`/posts/feed?${query.toString()}`);
-            state.home.items = state.home.items.concat(response.posts || []);
-            state.home.cursor = response.nextCursor || null;
-            state.home.hasMore = Boolean(response.hasMore);
+                const response = await apiRequest(`/posts/feed?${query.toString()}`);
+                state.home.items = state.home.items.concat(response.posts || []);
+                state.home.cursor = response.nextCursor || null;
+                state.home.hasMore = Boolean(response.hasMore);
+            }
             renderHomeFeed();
         } catch (error) {
             showToast(error.message || 'Failed to load feed', 'error');
         } finally {
             state.home.loading = false;
-            dom.homeLoadMore.textContent = 'Load more posts';
-            dom.homeLoadMore.hidden = !state.home.hasMore;
+            if (dom.homeLoadMore) {
+                dom.homeLoadMore.textContent = 'Load more posts';
+                dom.homeLoadMore.hidden = !state.home.hasMore;
+            }
         }
     }
 
     function renderHomeFeed() {
+        if (!dom.homeFeed) return;
+        
         if (!state.home.items.length) {
             dom.homeFeed.innerHTML = '';
-            dom.homeEmpty.hidden = false;
-            dom.homeEmpty.textContent = 'No posts yet. Use + Post to publish the first one.';
+            if (dom.homeEmpty) {
+                dom.homeEmpty.hidden = false;
+                dom.homeEmpty.textContent = 'No posts yet. Use + Post to publish the first one.';
+            }
             return;
         }
 
-        dom.homeEmpty.hidden = true;
+        if (dom.homeEmpty) {
+            dom.homeEmpty.hidden = true;
+        }
         dom.homeFeed.innerHTML = state.home.items.map((post) => renderPostCard(post)).join('');
+        
+        // Show guest badge if in guest mode
+        const guestBadge = document.getElementById('guestBadge');
+        if (guestBadge && isGuestMode() && state.home.items.length > 0) {
+            guestBadge.hidden = false;
+        }
     }
 
     async function loadReels(reset) {
@@ -640,42 +677,60 @@
         }
 
         state.reels.loading = true;
-        dom.reelsLoadMore.textContent = 'Loading...';
-        dom.reelsLoadMore.hidden = false;
+        if (dom.reelsLoadMore) {
+            dom.reelsLoadMore.textContent = 'Loading...';
+            dom.reelsLoadMore.hidden = false;
+        }
 
         try {
-            const query = new URLSearchParams({ limit: '4' });
-            if (state.reels.cursor) {
-                query.set('cursor', state.reels.cursor);
-            }
+            if (isGuestMode()) {
+                // No reels data for guests
+                state.reels.items = [];
+                state.reels.hasMore = false;
+            } else {
+                const query = new URLSearchParams({ limit: '4' });
+                if (state.reels.cursor) {
+                    query.set('cursor', state.reels.cursor);
+                }
 
-            const response = await apiRequest(`/reels/feed?${query.toString()}`);
-            state.reels.items = state.reels.items.concat(response.reels || []);
-            state.reels.cursor = response.nextCursor || null;
-            state.reels.hasMore = Boolean(response.hasMore);
+                const response = await apiRequest(`/reels/feed?${query.toString()}`);
+                state.reels.items = state.reels.items.concat(response.reels || []);
+                state.reels.cursor = response.nextCursor || null;
+                state.reels.hasMore = Boolean(response.hasMore);
+            }
             renderReels();
         } catch (error) {
             showToast(error.message || 'Failed to load reels', 'error');
         } finally {
             state.reels.loading = false;
-            dom.reelsLoadMore.textContent = 'Load more reels';
-            dom.reelsLoadMore.hidden = !state.reels.hasMore;
+            if (dom.reelsLoadMore) {
+                dom.reelsLoadMore.textContent = 'Load more reels';
+                dom.reelsLoadMore.hidden = !state.reels.hasMore;
+            }
         }
     }
 
     function renderReels() {
+        if (!dom.reelsFeed) return;
+        
         if (!state.reels.items.length) {
             dom.reelsFeed.innerHTML = '';
-            dom.reelsEmpty.hidden = false;
-            dom.reelsEmpty.textContent = 'No reels yet. Your 30-second stories can go here.';
+            if (dom.reelsEmpty) {
+                dom.reelsEmpty.hidden = false;
+                dom.reelsEmpty.textContent = 'No reels yet. Your 30-second stories can go here.';
+            }
             return;
         }
 
-        dom.reelsEmpty.hidden = true;
+        if (dom.reelsEmpty) {
+            dom.reelsEmpty.hidden = true;
+        }
         dom.reelsFeed.innerHTML = state.reels.items.map((reel) => renderReelCard(reel)).join('');
-        dom.reelsFeed.querySelectorAll('video[data-reel-video]').forEach((video) => {
-            reelObserver.observe(video);
-        });
+        if (reelObserver) {
+            dom.reelsFeed.querySelectorAll('video[data-reel-video]').forEach((video) => {
+                reelObserver.observe(video);
+            });
+        }
     }
 
     async function loadConversations(forceRefresh) {
@@ -684,8 +739,13 @@
         }
 
         try {
-            const response = await apiRequest('/messages/conversations');
-            state.messages.conversations = response.conversations || [];
+            if (isGuestMode()) {
+                // No messages for guests
+                state.messages.conversations = [];
+            } else {
+                const response = await apiRequest('/messages/conversations');
+                state.messages.conversations = response.conversations || [];
+            }
             renderConversations();
         } catch (error) {
             showToast(error.message || 'Failed to load conversations', 'error');
@@ -693,6 +753,8 @@
     }
 
     function renderConversations() {
+        if (!dom.conversationList) return;
+        
         const conversations = state.messages.conversations;
 
         if (!conversations.length) {
@@ -705,7 +767,7 @@
                 const active = state.messages.activeUser && state.messages.activeUser.id === conversation.user.id;
                 return `
                     <button class="conversation-item ${active ? 'active' : ''}" type="button" data-action="open-conversation" data-user-id="${conversation.user.id}">
-                        <img class="avatar small" src="${getAvatar(conversation.user.profileImage)}" alt="${escapeHtml(conversation.user.username)}">
+                        <img class="avatar small" src="${getAvatar(conversation.user.profileImage)}" alt="${escapeHtml(conversation.user.username)}" onerror="this.src='ilogo.png'">
                         <div class="conversation-main">
                             <strong>${escapeHtml(conversation.user.username)}</strong>
                             <div class="meta-line">${escapeHtml(truncateText(conversation.lastMessage.text, 62))}</div>
@@ -750,10 +812,13 @@
     }
 
     function renderActiveConversation() {
+        if (!dom.messageThread || !dom.messageComposer || !dom.chatHeader || !dom.chatBackButton) return;
+        
         const activeUser = state.messages.activeUser;
 
         if (!activeUser) {
-            dom.chatHeader.querySelector('h3').textContent = 'Choose a chat';
+            const chatHeaderH3 = dom.chatHeader.querySelector('h3');
+            if (chatHeaderH3) chatHeaderH3.textContent = 'Choose a chat';
             dom.chatBackButton.hidden = true;
             dom.messageThread.className = 'message-thread empty-thread';
             dom.messageThread.innerHTML = '<p>Select a conversation or start one from Search or Profile.</p>';
@@ -761,7 +826,8 @@
             return;
         }
 
-        dom.chatHeader.querySelector('h3').textContent = activeUser.username;
+        const chatHeaderH3 = dom.chatHeader.querySelector('h3');
+        if (chatHeaderH3) chatHeaderH3.textContent = activeUser.username;
         dom.chatBackButton.hidden = window.innerWidth > 819;
         dom.messageComposer.hidden = false;
 
@@ -1645,22 +1711,40 @@
     }
 
     function renderPostCard(post, compact) {
+        // Handle both API format and demo format
         const author = post.author || {};
-        const showDelete = author.id === state.session.user.id && !compact;
-        const textContent = post.text ? `<p class="post-text">${escapeHtml(post.text)}</p>` : '';
-        const imageContent = post.imageData
-            ? `<img class="${compact ? 'preview-image' : 'post-media'}" src="${post.imageData}" alt="${escapeHtml(post.text || 'instaJOY post image')}" loading="lazy">`
+        const text = post.text || post.content?.text || '';
+        const image = post.imageData || post.content?.image || '';
+        const timestamp = post.createdAt || post.timestamp || new Date();
+        const likeCount = post.likeCount || post.likes || 0;
+        const commentCount = post.commentCount || post.comments || 0;
+        const isLiked = post.isLiked || post.liked || false;
+        const showDelete = author.id === state.session.user?.id && !compact;
+        
+        const textContent = text ? `<p class="post-text">${escapeHtml(text)}</p>` : '';
+        const imageContent = image
+            ? `<img class="${compact ? 'preview-image' : 'post-media'}" src="${image}" alt="${escapeHtml(text || 'instaJOY post image')}" loading="lazy" onerror="this.style.display='none'">`
             : '';
         const badge = post.category ? `<span class="post-badge">${escapeHtml(formatCategory(post.category))}</span>` : '';
+
+        // Format time display
+        let timeDisplay;
+        if (typeof timestamp === 'string') {
+            timeDisplay = formatDateTime(timestamp);
+        } else if (timestamp instanceof Date) {
+            timeDisplay = formatDistanceToNow(timestamp) + ' ago';
+        } else {
+            timeDisplay = 'just now';
+        }
 
         return `
             <article class="post-card" data-post-id="${post.id}">
                 <div class="card-header">
                     <button class="avatar-row text-button" type="button" data-action="open-profile" data-username="${escapeHtml(author.username || '')}">
-                        <img class="avatar" src="${getAvatar(author.profileImage)}" alt="${escapeHtml(author.username || 'User')}">
+                        <img class="avatar" src="${getAvatar(author.profileImage || author.avatar)}" alt="${escapeHtml(author.username || 'User')}" onerror="this.src='ilogo.png'">
                         <span class="user-copy">
                             <strong>${escapeHtml(author.username || 'Unknown')}</strong>
-                            <span>${formatDateTime(post.createdAt)}</span>
+                            <span>${timeDisplay}</span>
                         </span>
                     </button>
                     ${showDelete ? `<button class="ghost-button compact" type="button" data-action="delete-post" data-post-id="${post.id}">Delete</button>` : ''}
@@ -1670,11 +1754,11 @@
                     ${imageContent}
                     ${textContent}
                     <div class="action-row">
-                        <button class="chip-button ${post.isLiked ? 'is-active' : ''}" type="button" data-action="toggle-post-like" data-post-id="${post.id}">
-                            ${post.isLiked ? 'Unlike' : 'Like'} • ${post.likeCount}
+                        <button class="chip-button ${isLiked ? 'is-active' : ''}" type="button" data-action="toggle-post-like" data-post-id="${post.id}">
+                            ${isLiked ? 'Unlike' : 'Like'} • ${likeCount}
                         </button>
                         <button class="chip-button" type="button" data-action="open-comments" data-target-type="post" data-target-id="${post.id}">
-                            Comment • ${post.commentCount}
+                            Comment • ${commentCount}
                         </button>
                         <button class="chip-button" type="button" data-action="share-post" data-post-id="${post.id}">
                             Share
@@ -1906,6 +1990,29 @@
         }
 
         return date.toLocaleDateString();
+    }
+
+    function formatDistanceToNow(date) {
+        if (!date) return 'just now';
+        if (!(date instanceof Date)) date = new Date(date);
+        if (Number.isNaN(date.getTime())) return 'just now';
+
+        const diffMs = Date.now() - date.getTime();
+        const diffMinutes = Math.round(diffMs / 60000);
+
+        if (diffMinutes < 1) return 'just now';
+        if (diffMinutes < 60) return `${diffMinutes}m`;
+        
+        const diffHours = Math.round(diffMinutes / 60);
+        if (diffHours < 24) return `${diffHours}h`;
+        
+        const diffDays = Math.round(diffHours / 24);
+        if (diffDays < 7) return `${diffDays}d`;
+        
+        const diffWeeks = Math.round(diffDays / 7);
+        if (diffWeeks < 4) return `${diffWeeks}w`;
+        
+        return `${Math.round(diffDays / 30)}mo`;
     }
 
     function formatShortDate(value) {

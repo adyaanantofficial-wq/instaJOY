@@ -72,7 +72,10 @@ function getAllowedOrigins() {
             'http://127.0.0.1:4173',
             'http://localhost:4173',
             'http://127.0.0.1:3000',
-            'http://localhost:3000'
+            'http://localhost:3000',
+            // Allow local server origin used during development and testing
+            'http://127.0.0.1:5000',
+            'http://localhost:5000'
         );
     }
 
