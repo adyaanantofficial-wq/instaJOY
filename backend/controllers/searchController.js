@@ -1,63 +1,82 @@
-/**
- * Search Controller
- */
-
-const { ObjectId } = require('mongodb');
 const { getCollection } = require('../utils/database');
+const asyncHandler = require('../utils/asyncHandler');
+const { serializePosts, serializeUserSummary } = require('../utils/serializers');
+const { escapeRegex, toObjectId } = require('../utils/text');
 
-exports.searchUsers = async (req, res, next) => {
-    try {
-        const { q } = req.query;
+async function findUsers(query) {
+    const users = await getCollection('users')
+        .find({
+            username: { $regex: escapeRegex(query), $options: 'i' },
+        })
+        .project({ username: 1, bio: 1, profileImage: 1, createdAt: 1, updatedAt: 1 })
+        .limit(15)
+        .toArray();
 
-        if (!q || q.trim().length < 2) {
-            return res.status(400).json({
-                success: false,
-                message: 'Search query must be at least 2 characters',
-            });
-        }
+    return users.map(serializeUserSummary);
+}
 
-        const usersCollection = getCollection('users');
+async function findPosts(query, viewerId) {
+    const posts = await getCollection('posts')
+        .find({
+            type: 'text',
+            text: { $regex: escapeRegex(query), $options: 'i' },
+        })
+        .sort({ createdAt: -1 })
+        .limit(15)
+        .toArray();
 
-        const users = await usersCollection
-            .find({
-                $or: [
-                    { username: { $regex: q, $options: 'i' } },
-                    { name: { $regex: q, $options: 'i' } },
-                ],
-            })
-            .limit(20)
-            .toArray();
+    return serializePosts(posts, viewerId);
+}
 
-        users.forEach((user) => delete user.password);
+exports.searchAll = asyncHandler(async (req, res) => {
+    const q = String(req.query.q || '').trim();
+    const viewerId = toObjectId(req.userId);
 
-        res.json({ success: true, users });
-    } catch (error) {
-        next(error);
+    if (q.length < 2) {
+        return res.status(400).json({
+            success: false,
+            message: 'Search query must be at least 2 characters',
+        });
     }
-};
 
-exports.searchPosts = async (req, res, next) => {
-    try {
-        const { q } = req.query;
+    const [users, posts] = await Promise.all([findUsers(q), findPosts(q, viewerId)]);
 
-        if (!q || q.trim().length < 2) {
-            return res.status(400).json({
-                success: false,
-                message: 'Search query must be at least 2 characters',
-            });
-        }
+    res.json({
+        success: true,
+        users,
+        posts,
+    });
+});
 
-        const postsCollection = getCollection('posts');
+exports.searchUsers = asyncHandler(async (req, res) => {
+    const q = String(req.query.q || '').trim();
 
-        const posts = await postsCollection
-            .find({
-                caption: { $regex: q, $options: 'i' },
-            })
-            .limit(20)
-            .toArray();
-
-        res.json({ success: true, posts });
-    } catch (error) {
-        next(error);
+    if (q.length < 2) {
+        return res.status(400).json({
+            success: false,
+            message: 'Search query must be at least 2 characters',
+        });
     }
-};
+
+    res.json({
+        success: true,
+        users: await findUsers(q),
+    });
+});
+
+exports.searchPosts = asyncHandler(async (req, res) => {
+    const q = String(req.query.q || '').trim();
+    const viewerId = toObjectId(req.userId);
+
+    if (q.length < 2) {
+        return res.status(400).json({
+            success: false,
+            message: 'Search query must be at least 2 characters',
+        });
+    }
+
+    res.json({
+        success: true,
+        posts: await findPosts(q, viewerId),
+    });
+});

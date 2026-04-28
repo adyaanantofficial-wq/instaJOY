@@ -1,129 +1,143 @@
-/**
- * Follow Controller
- */
-
-const { ObjectId } = require('mongodb');
 const { getCollection } = require('../utils/database');
+const asyncHandler = require('../utils/asyncHandler');
+const { createNotification } = require('../utils/notifications');
+const { serializeUserSummary } = require('../utils/serializers');
+const { toObjectId } = require('../utils/text');
 
-exports.followUser = async (req, res, next) => {
-    try {
-        const { userId } = req.params;
-        const currentUserId = req.userId;
+async function getUserListByIds(ids) {
+    if (!ids.length) {
+        return [];
+    }
 
-        if (userId === currentUserId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cannot follow yourself',
-            });
-        }
+    const users = await getCollection('users')
+        .find({ _id: { $in: ids } })
+        .project({ username: 1, bio: 1, profileImage: 1, createdAt: 1, updatedAt: 1 })
+        .toArray();
 
-        const usersCollection = getCollection('users');
-        const notificationsCollection = getCollection('notifications');
+    return users.map(serializeUserSummary);
+}
 
-        // Add to following
-        await usersCollection.updateOne(
-            { _id: new ObjectId(currentUserId) },
-            { $addToSet: { following: new ObjectId(userId) } }
-        );
+exports.followUser = asyncHandler(async (req, res) => {
+    const currentUserId = toObjectId(req.userId);
+    const targetUserId = toObjectId(req.params.userId);
 
-        // Add to followers
-        await usersCollection.updateOne(
-            { _id: new ObjectId(userId) },
-            { $addToSet: { followers: new ObjectId(currentUserId) } }
-        );
+    if (!currentUserId || !targetUserId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid user id',
+        });
+    }
 
-        // Create notification
-        await notificationsCollection.insertOne({
-            userId: new ObjectId(userId),
-            type: 'follow',
-            relatedUserId: new ObjectId(currentUserId),
-            read: false,
+    if (currentUserId.toString() === targetUserId.toString()) {
+        return res.status(400).json({
+            success: false,
+            message: 'You cannot follow yourself',
+        });
+    }
+
+    const usersCollection = getCollection('users');
+    const targetUser = await usersCollection.findOne({ _id: targetUserId });
+
+    if (!targetUser) {
+        return res.status(404).json({
+            success: false,
+            message: 'User not found',
+        });
+    }
+
+    const followsCollection = getCollection('follows');
+    const existing = await followsCollection.findOne({
+        followerId: currentUserId,
+        followingId: targetUserId,
+    });
+
+    if (!existing) {
+        await followsCollection.insertOne({
+            followerId: currentUserId,
+            followingId: targetUserId,
             createdAt: new Date(),
         });
 
-        res.json({ success: true, message: 'User followed' });
-    } catch (error) {
-        next(error);
+        await createNotification({
+            userId: targetUserId,
+            actorUserId: currentUserId,
+            type: 'follow',
+            entityType: 'user',
+            entityId: currentUserId,
+            text: 'started following you',
+        });
     }
-};
 
-exports.unfollowUser = async (req, res, next) => {
-    try {
-        const { userId } = req.params;
-        const currentUserId = req.userId;
+    res.json({
+        success: true,
+        message: 'User followed',
+    });
+});
 
-        const usersCollection = getCollection('users');
+exports.unfollowUser = asyncHandler(async (req, res) => {
+    const currentUserId = toObjectId(req.userId);
+    const targetUserId = toObjectId(req.params.userId);
 
-        // Remove from following
-        await usersCollection.updateOne(
-            { _id: new ObjectId(currentUserId) },
-            { $pull: { following: new ObjectId(userId) } }
-        );
-
-        // Remove from followers
-        await usersCollection.updateOne(
-            { _id: new ObjectId(userId) },
-            { $pull: { followers: new ObjectId(currentUserId) } }
-        );
-
-        res.json({ success: true, message: 'User unfollowed' });
-    } catch (error) {
-        next(error);
+    if (!currentUserId || !targetUserId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid user id',
+        });
     }
-};
 
-exports.getFollowers = async (req, res, next) => {
-    try {
-        const { userId } = req.params;
+    await getCollection('follows').deleteOne({
+        followerId: currentUserId,
+        followingId: targetUserId,
+    });
 
-        const usersCollection = getCollection('users');
+    res.json({
+        success: true,
+        message: 'User unfollowed',
+    });
+});
 
-        const user = await usersCollection.findOne(
-            { _id: new ObjectId(userId) },
-            { projection: { followers: 1 } }
-        );
+exports.getFollowers = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.params.userId);
 
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
-
-        const followers = await usersCollection
-            .find({
-                _id: { $in: user.followers },
-            })
-            .project({ password: 0 })
-            .toArray();
-
-        res.json({ success: true, followers });
-    } catch (error) {
-        next(error);
+    if (!userId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid user id',
+        });
     }
-};
 
-exports.getFollowing = async (req, res, next) => {
-    try {
-        const { userId } = req.params;
+    const follows = await getCollection('follows')
+        .find({ followingId: userId })
+        .sort({ createdAt: -1 })
+        .toArray();
 
-        const usersCollection = getCollection('users');
+    const followers = await getUserListByIds(follows.map((row) => row.followerId));
 
-        const user = await usersCollection.findOne(
-            { _id: new ObjectId(userId) },
-            { projection: { following: 1 } }
-        );
+    res.json({
+        success: true,
+        followers,
+    });
+});
 
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
+exports.getFollowing = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.params.userId);
 
-        const following = await usersCollection
-            .find({
-                _id: { $in: user.following },
-            })
-            .project({ password: 0 })
-            .toArray();
-
-        res.json({ success: true, following });
-    } catch (error) {
-        next(error);
+    if (!userId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid user id',
+        });
     }
-};
+
+    const follows = await getCollection('follows')
+        .find({ followerId: userId })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+    const following = await getUserListByIds(follows.map((row) => row.followingId));
+
+    res.json({
+        success: true,
+        following,
+    });
+});

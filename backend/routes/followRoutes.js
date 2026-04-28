@@ -1,16 +1,13 @@
-/**
- * Follow Routes
- */
-
 const express = require('express');
-const { protect } = require('../middleware/auth');
+
 const followController = require('../controllers/followController');
+const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
 router.post('/:userId', protect, followController.followUser);
-router.post('/:userId/unfollow', protect, followController.unfollowUser);
-router.get('/:userId/followers', followController.getFollowers);
-router.get('/:userId/following', followController.getFollowing);
+router.delete('/:userId', protect, followController.unfollowUser);
+router.get('/:userId/followers', protect, followController.getFollowers);
+router.get('/:userId/following', protect, followController.getFollowing);
 
 module.exports = router;

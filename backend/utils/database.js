@@ -1,120 +1,113 @@
-/**
- * MongoDB Native Driver Connection
- * Handles all database connection and operations
- */
-
 const { MongoClient, ServerApiVersion } = require('mongodb');
 
-let client;
-let db;
+let client = null;
+let db = null;
 
-/**
- * Connect to MongoDB
- */
+async function createIndexes(database) {
+    await Promise.all([
+        database.collection('users').createIndexes([
+            { key: { username: 1 }, unique: true },
+            { key: { email: 1 }, unique: true },
+            { key: { createdAt: -1 } },
+        ]),
+        database.collection('posts').createIndexes([
+            { key: { userId: 1 } },
+            { key: { createdAt: -1 } },
+            { key: { type: 1, createdAt: -1 } },
+        ]),
+        database.collection('reels').createIndexes([
+            { key: { userId: 1 } },
+            { key: { createdAt: -1 } },
+        ]),
+        database.collection('likes').createIndexes([
+            { key: { userId: 1, createdAt: -1 } },
+            { key: { targetType: 1, targetId: 1, createdAt: -1 } },
+            { key: { userId: 1, targetType: 1, targetId: 1 }, unique: true },
+        ]),
+        database.collection('comments').createIndexes([
+            { key: { userId: 1, createdAt: -1 } },
+            { key: { targetType: 1, targetId: 1, createdAt: -1 } },
+        ]),
+        database.collection('messages').createIndexes([
+            { key: { conversationKey: 1, createdAt: -1 } },
+            { key: { senderId: 1, createdAt: -1 } },
+            { key: { receiverId: 1, createdAt: -1 } },
+        ]),
+        database.collection('notifications').createIndexes([
+            { key: { userId: 1, createdAt: -1 } },
+            { key: { readAt: 1 } },
+        ]),
+        database.collection('follows').createIndexes([
+            { key: { followerId: 1, followingId: 1 }, unique: true },
+            { key: { followingId: 1, createdAt: -1 } },
+            { key: { followerId: 1, createdAt: -1 } },
+        ]),
+    ]);
+}
+
 async function connectDB() {
-    try {
-        client = new MongoClient(process.env.MONGODB_URI, {
-            serverApi: {
-                version: ServerApiVersion.v1,
-                strict: true,
-                deprecationErrors: true,
-            },
-        });
-
-        // Connect to the MongoDB cluster
-        await client.connect();
-
-        // Select database
-        db = client.db('instaJOY');
-
-        // Verify connection
-        await db.admin().ping();
-
-        console.log('✓ MongoDB Connected Successfully');
-
-        // Create indexes for performance
-        await createIndexes();
-
+    if (db) {
         return db;
+    }
+
+    if (!process.env.MONGODB_URI) {
+        throw new Error('MONGODB_URI is required');
+    }
+
+    client = new MongoClient(process.env.MONGODB_URI, {
+        serverApi: {
+            version: ServerApiVersion.v1,
+            strict: true,
+            deprecationErrors: true,
+        },
+    });
+
+    try {
+        await client.connect();
+        db = process.env.MONGODB_DB ? client.db(process.env.MONGODB_DB) : client.db();
+        await db.command({ ping: 1 });
+        await createIndexes(db);
     } catch (error) {
-        console.error('✗ MongoDB Connection Failed:', error.message);
+        if (client) {
+            await client.close().catch(() => {});
+            client = null;
+            db = null;
+        }
+
+        if (String(error.message || '').includes('querySrv')) {
+            error.message =
+                'Could not resolve the MongoDB Atlas SRV host. Check the MONGODB_URI host, local DNS/network access, or use a working Atlas connection string.';
+        }
+
         throw error;
     }
-}
 
-/**
- * Create database indexes
- */
-async function createIndexes() {
-    try {
-        const usersCollection = db.collection('users');
-        const postsCollection = db.collection('posts');
-        const reelsCollection = db.collection('reels');
-        const messagesCollection = db.collection('messages');
-        const notificationsCollection = db.collection('notifications');
-
-        // Users indexes
-        await usersCollection.createIndex({ username: 1 }, { unique: true });
-        await usersCollection.createIndex({ email: 1 }, { unique: true });
-        await usersCollection.createIndex({ createdAt: -1 });
-
-        // Posts indexes
-        await postsCollection.createIndex({ authorId: 1 });
-        await postsCollection.createIndex({ createdAt: -1 });
-        await postsCollection.createIndex({ likes: 1 });
-        await postsCollection.createIndex({ caption: 'text' });
-
-        // Reels indexes
-        await reelsCollection.createIndex({ authorId: 1 });
-        await reelsCollection.createIndex({ createdAt: -1 });
-        await reelsCollection.createIndex({ likes: 1 });
-
-        // Messages indexes
-        await messagesCollection.createIndex({ senderId: 1, receiverId: 1 });
-        await messagesCollection.createIndex({ createdAt: -1 });
-
-        // Notifications indexes
-        await notificationsCollection.createIndex({ userId: 1 });
-        await notificationsCollection.createIndex({ createdAt: -1 });
-        await notificationsCollection.createIndex({ read: 1 });
-
-        console.log('✓ Database indexes created');
-    } catch (error) {
-        console.error('Error creating indexes:', error.message);
-    }
-}
-
-/**
- * Get database instance
- */
-function getDB() {
-    if (!db) {
-        throw new Error('Database not connected. Call connectDB first.');
-    }
     return db;
 }
 
-/**
- * Get a collection
- */
-function getCollection(name) {
-    const database = getDB();
-    return database.collection(name);
+function getDB() {
+    if (!db) {
+        throw new Error('Database not connected');
+    }
+
+    return db;
 }
 
-/**
- * Close database connection
- */
+function getCollection(name) {
+    return getDB().collection(name);
+}
+
 async function closeDB() {
     if (client) {
         await client.close();
-        console.log('✓ Database connection closed');
+        client = null;
+        db = null;
     }
 }
 
 module.exports = {
-    connectDB,
-    getDB,
-    getCollection,
     closeDB,
+    connectDB,
+    getCollection,
+    getDB,
 };

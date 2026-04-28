@@ -1,107 +1,201 @@
-/**
- * Message Controller
- */
-
-const { ObjectId } = require('mongodb');
 const { getCollection } = require('../utils/database');
+const asyncHandler = require('../utils/asyncHandler');
+const { createNotification } = require('../utils/notifications');
+const { serializeUserSummary } = require('../utils/serializers');
+const { sanitizePlainText, toObjectId } = require('../utils/text');
 
-exports.sendMessage = async (req, res, next) => {
-    try {
-        const { receiverId, text } = req.body;
-        const senderId = req.userId;
+function getConversationKey(userA, userB) {
+    return [userA.toString(), userB.toString()].sort().join(':');
+}
 
-        if (!text || text.trim().length === 0) {
-            return res.status(400).json({ success: false, message: 'Message cannot be empty' });
-        }
+exports.sendMessage = asyncHandler(async (req, res) => {
+    const senderId = toObjectId(req.userId);
+    const receiverId = toObjectId(req.body.receiverId);
+    const text = sanitizePlainText(req.body.text, 1000);
 
-        const messagesCollection = getCollection('messages');
-
-        const message = {
-            senderId: new ObjectId(senderId),
-            receiverId: new ObjectId(receiverId),
-            text: text.trim(),
-            read: false,
-            createdAt: new Date(),
-        };
-
-        const result = await messagesCollection.insertOne(message);
-
-        res.status(201).json({
-            success: true,
-            message: { ...message, _id: result.insertedId },
+    if (!senderId || !receiverId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid sender or receiver',
         });
-    } catch (error) {
-        next(error);
     }
-};
 
-exports.getMessages = async (req, res, next) => {
-    try {
-        const { userId } = req.params;
-        const currentUserId = req.userId;
-
-        const messagesCollection = getCollection('messages');
-
-        const messages = await messagesCollection
-            .find({
-                $or: [
-                    { senderId: new ObjectId(currentUserId), receiverId: new ObjectId(userId) },
-                    { senderId: new ObjectId(userId), receiverId: new ObjectId(currentUserId) },
-                ],
-            })
-            .sort({ createdAt: 1 })
-            .toArray();
-
-        res.json({ success: true, messages });
-    } catch (error) {
-        next(error);
+    if (senderId.toString() === receiverId.toString()) {
+        return res.status(400).json({
+            success: false,
+            message: 'You cannot message yourself',
+        });
     }
-};
 
-exports.getConversations = async (req, res, next) => {
-    try {
-        const userId = req.userId;
-        const messagesCollection = getCollection('messages');
+    if (!text) {
+        return res.status(400).json({
+            success: false,
+            message: 'Message cannot be empty',
+        });
+    }
 
-        const conversations = await messagesCollection
-            .aggregate([
-                {
-                    $match: {
-                        $or: [
-                            { senderId: new ObjectId(userId) },
-                            { receiverId: new ObjectId(userId) },
-                        ],
+    const usersCollection = getCollection('users');
+    const receiver = await usersCollection.findOne({ _id: receiverId });
+
+    if (!receiver) {
+        return res.status(404).json({
+            success: false,
+            message: 'Receiver not found',
+        });
+    }
+
+    const message = {
+        conversationKey: getConversationKey(senderId, receiverId),
+        senderId,
+        receiverId,
+        text,
+        readAt: null,
+        createdAt: new Date(),
+    };
+
+    const result = await getCollection('messages').insertOne(message);
+
+    await createNotification({
+        userId: receiverId,
+        actorUserId: senderId,
+        type: 'message',
+        entityType: 'message',
+        entityId: result.insertedId,
+        text: 'sent you a message',
+    });
+
+    res.status(201).json({
+        success: true,
+        message: {
+            id: result.insertedId.toString(),
+            senderId: senderId.toString(),
+            receiverId: receiverId.toString(),
+            text,
+            readAt: null,
+            createdAt: message.createdAt,
+        },
+    });
+});
+
+exports.getMessages = asyncHandler(async (req, res) => {
+    const currentUserId = toObjectId(req.userId);
+    const otherUserId = toObjectId(req.params.userId);
+
+    if (!currentUserId || !otherUserId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid user id',
+        });
+    }
+
+    const conversationKey = getConversationKey(currentUserId, otherUserId);
+    const messagesCollection = getCollection('messages');
+
+    await messagesCollection.updateMany(
+        {
+            conversationKey,
+            receiverId: currentUserId,
+            readAt: null,
+        },
+        {
+            $set: { readAt: new Date() },
+        }
+    );
+
+    const messages = await messagesCollection
+        .find({ conversationKey })
+        .sort({ createdAt: 1 })
+        .limit(200)
+        .toArray();
+
+    res.json({
+        success: true,
+        messages: messages.map((message) => ({
+            id: message._id.toString(),
+            senderId: message.senderId.toString(),
+            receiverId: message.receiverId.toString(),
+            text: message.text,
+            readAt: message.readAt,
+            createdAt: message.createdAt,
+        })),
+    });
+});
+
+exports.getConversations = asyncHandler(async (req, res) => {
+    const currentUserId = toObjectId(req.userId);
+
+    if (!currentUserId) {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required',
+        });
+    }
+
+    const conversations = await getCollection('messages')
+        .aggregate([
+            {
+                $match: {
+                    $or: [{ senderId: currentUserId }, { receiverId: currentUserId }],
+                },
+            },
+            {
+                $sort: { createdAt: -1 },
+            },
+            {
+                $addFields: {
+                    otherUserId: {
+                        $cond: [{ $eq: ['$senderId', currentUserId] }, '$receiverId', '$senderId'],
                     },
                 },
-                {
-                    $sort: { createdAt: -1 },
-                },
-                {
-                    $group: {
-                        _id: {
+            },
+            {
+                $group: {
+                    _id: '$otherUserId',
+                    lastMessage: { $first: '$$ROOT' },
+                    unreadCount: {
+                        $sum: {
                             $cond: [
-                                { $eq: ['$senderId', new ObjectId(userId)] },
-                                '$receiverId',
-                                '$senderId',
+                                {
+                                    $and: [
+                                        { $eq: ['$receiverId', currentUserId] },
+                                        { $eq: ['$readAt', null] },
+                                    ],
+                                },
+                                1,
+                                0,
                             ],
                         },
-                        lastMessage: { $first: '$$ROOT' },
                     },
                 },
-                {
-                    $lookup: {
-                        from: 'users',
-                        localField: '_id',
-                        foreignField: '_id',
-                        as: 'user',
-                    },
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: '_id',
+                    foreignField: '_id',
+                    as: 'user',
                 },
-                { $unwind: '$user' },
-            ])
-            .toArray();
+            },
+            { $unwind: '$user' },
+            {
+                $sort: { 'lastMessage.createdAt': -1 },
+            },
+        ])
+        .toArray();
 
-        res.json({ success: true, conversations });
-    } catch (error) {
-        next(error);
-    }
-};
+    res.json({
+        success: true,
+        conversations: conversations.map((conversation) => ({
+            user: serializeUserSummary(conversation.user),
+            unreadCount: conversation.unreadCount,
+            lastMessage: {
+                id: conversation.lastMessage._id.toString(),
+                senderId: conversation.lastMessage.senderId.toString(),
+                receiverId: conversation.lastMessage.receiverId.toString(),
+                text: conversation.lastMessage.text,
+                readAt: conversation.lastMessage.readAt,
+                createdAt: conversation.lastMessage.createdAt,
+            },
+        })),
+    });
+});

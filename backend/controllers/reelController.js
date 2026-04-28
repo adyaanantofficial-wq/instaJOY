@@ -1,129 +1,279 @@
-/**
- * Reel Controller - Handles short video posts
- */
-
-const { ObjectId } = require('mongodb');
 const { getCollection } = require('../utils/database');
+const asyncHandler = require('../utils/asyncHandler');
+const { createNotification } = require('../utils/notifications');
+const { serializeComments, serializeReels } = require('../utils/serializers');
+const { sanitizePlainText, toObjectId } = require('../utils/text');
+const { validateVideoDataUri } = require('../utils/media');
 
-exports.createReel = async (req, res, next) => {
-    try {
-        const { caption, videoUrl } = req.body;
-        const userId = req.userId;
+exports.createReel = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const caption = sanitizePlainText(req.body.caption, 500);
 
-        if (!videoUrl) {
-            return res.status(400).json({ success: false, message: 'Video URL required' });
-        }
-
-        const reelsCollection = getCollection('reels');
-
-        const reel = {
-            authorId: new ObjectId(userId),
-            caption: caption || '',
-            videoUrl,
-            likes: [],
-            comments: [],
-            views: 0,
-            createdAt: new Date(),
-        };
-
-        const result = await reelsCollection.insertOne(reel);
-
-        res.status(201).json({
-            success: true,
-            reel: { ...reel, _id: result.insertedId },
+    if (!userId) {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required',
         });
-    } catch (error) {
-        next(error);
     }
-};
 
-exports.getReelsFeed = async (req, res, next) => {
-    try {
-        const skip = parseInt(req.query.skip) || 0;
-        const userId = req.userId;
-
-        const reelsCollection = getCollection('reels');
-
-        const reels = await reelsCollection
-            .aggregate([
-                { $sort: { createdAt: -1 } },
-                { $skip: skip },
-                { $limit: 20 },
-                {
-                    $lookup: {
-                        from: 'users',
-                        localField: 'authorId',
-                        foreignField: '_id',
-                        as: 'author',
-                    },
-                },
-                { $unwind: '$author' },
-            ])
-            .toArray();
-
-        const reelsWithStatus = reels.map((reel) => ({
-            ...reel,
-            isLiked: userId
-                ? reel.likes.some((id) => id.equals(new ObjectId(userId)))
-                : false,
-        }));
-
-        res.json({ success: true, reels: reelsWithStatus });
-    } catch (error) {
-        next(error);
+    if (!req.body.videoData) {
+        return res.status(400).json({
+            success: false,
+            message: 'Reel media is required',
+        });
     }
-};
 
-exports.likeReel = async (req, res, next) => {
-    try {
-        const { reelId } = req.params;
-        const userId = req.userId;
+    const validatedVideo = validateVideoDataUri(
+        req.body.videoData,
+        Number.parseFloat(req.body.durationSeconds)
+    );
+    const now = new Date();
+    const reel = {
+        userId,
+        caption,
+        videoData: validatedVideo.dataUri,
+        videoMimeType: validatedVideo.mimeType,
+        videoSizeBytes: validatedVideo.sizeBytes,
+        durationSeconds: validatedVideo.durationSeconds,
+        createdAt: now,
+        updatedAt: now,
+    };
 
-        const reelsCollection = getCollection('reels');
+    const result = await getCollection('reels').insertOne(reel);
 
-        const reel = await reelsCollection.findOne({ _id: new ObjectId(reelId) });
+    res.status(201).json({
+        success: true,
+        message: 'Reel created',
+        reel: (await serializeReels([{ ...reel, _id: result.insertedId }], userId))[0],
+    });
+});
 
-        if (!reel) {
-            return res.status(404).json({ success: false, message: 'Reel not found' });
-        }
+exports.getReelsFeed = asyncHandler(async (req, res) => {
+    const viewerId = toObjectId(req.userId);
+    const cursor = toObjectId(req.query.cursor);
+    const limit = Math.min(10, Math.max(1, Number.parseInt(req.query.limit, 10) || 6));
+    const query = {};
 
-        const alreadyLiked = reel.likes.some((id) => id.equals(new ObjectId(userId)));
-
-        if (!alreadyLiked) {
-            await reelsCollection.updateOne(
-                { _id: new ObjectId(reelId) },
-                { $push: { likes: new ObjectId(userId) } }
-            );
-        }
-
-        res.json({ success: true, message: 'Reel liked' });
-    } catch (error) {
-        next(error);
+    if (cursor) {
+        query._id = { $lt: cursor };
     }
-};
 
-exports.commentReel = async (req, res, next) => {
-    try {
-        const { reelId } = req.params;
-        const { text } = req.body;
-        const userId = req.userId;
+    const reels = await getCollection('reels')
+        .find(query)
+        .sort({ _id: -1 })
+        .limit(limit + 1)
+        .toArray();
 
-        const reelsCollection = getCollection('reels');
+    const hasMore = reels.length > limit;
+    const pageItems = hasMore ? reels.slice(0, limit) : reels;
 
-        const comment = {
-            _id: new ObjectId(),
-            authorId: new ObjectId(userId),
-            text,
+    res.json({
+        success: true,
+        reels: await serializeReels(pageItems, viewerId),
+        nextCursor: hasMore ? pageItems[pageItems.length - 1]._id.toString() : null,
+        hasMore,
+    });
+});
+
+exports.likeReel = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const reelId = toObjectId(req.params.reelId);
+
+    if (!userId || !reelId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    const reelsCollection = getCollection('reels');
+    const likesCollection = getCollection('likes');
+    const reel = await reelsCollection.findOne({ _id: reelId });
+
+    if (!reel) {
+        return res.status(404).json({
+            success: false,
+            message: 'Reel not found',
+        });
+    }
+
+    const existing = await likesCollection.findOne({
+        userId,
+        targetType: 'reel',
+        targetId: reelId,
+    });
+
+    if (!existing) {
+        await likesCollection.insertOne({
+            userId,
+            targetType: 'reel',
+            targetId: reelId,
             createdAt: new Date(),
-        };
+        });
 
-        await reelsCollection.updateOne(
-            { _id: new ObjectId(reelId) },
-            { $push: { comments: comment } }
-        );
-
-        res.status(201).json({ success: true, comment });
-    } catch (error) {
-        next(error);
+        await createNotification({
+            userId: reel.userId,
+            actorUserId: userId,
+            type: 'like',
+            entityType: 'reel',
+            entityId: reelId,
+            text: 'liked your reel',
+        });
     }
-};
+
+    res.json({
+        success: true,
+        message: 'Reel liked',
+    });
+});
+
+exports.unlikeReel = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const reelId = toObjectId(req.params.reelId);
+
+    if (!userId || !reelId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    await getCollection('likes').deleteOne({
+        userId,
+        targetType: 'reel',
+        targetId: reelId,
+    });
+
+    res.json({
+        success: true,
+        message: 'Reel unliked',
+    });
+});
+
+exports.getComments = asyncHandler(async (req, res) => {
+    const reelId = toObjectId(req.params.reelId);
+
+    if (!reelId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid reel id',
+        });
+    }
+
+    const reel = await getCollection('reels').findOne({ _id: reelId });
+
+    if (!reel) {
+        return res.status(404).json({
+            success: false,
+            message: 'Reel not found',
+        });
+    }
+
+    const comments = await getCollection('comments')
+        .find({
+            targetType: 'reel',
+            targetId: reelId,
+        })
+        .sort({ createdAt: 1 })
+        .limit(80)
+        .toArray();
+
+    res.json({
+        success: true,
+        comments: await serializeComments(comments),
+    });
+});
+
+exports.commentReel = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const reelId = toObjectId(req.params.reelId);
+    const text = sanitizePlainText(req.body.text, 280);
+
+    if (!userId || !reelId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    if (!text) {
+        return res.status(400).json({
+            success: false,
+            message: 'Comment cannot be empty',
+        });
+    }
+
+    const reel = await getCollection('reels').findOne({ _id: reelId });
+
+    if (!reel) {
+        return res.status(404).json({
+            success: false,
+            message: 'Reel not found',
+        });
+    }
+
+    const comment = {
+        userId,
+        targetType: 'reel',
+        targetId: reelId,
+        text,
+        createdAt: new Date(),
+    };
+
+    const result = await getCollection('comments').insertOne(comment);
+
+    await createNotification({
+        userId: reel.userId,
+        actorUserId: userId,
+        type: 'comment',
+        entityType: 'reel',
+        entityId: reelId,
+        text: 'commented on your reel',
+    });
+
+    res.status(201).json({
+        success: true,
+        message: 'Comment added',
+        comment: (await serializeComments([{ ...comment, _id: result.insertedId }]))[0],
+    });
+});
+
+exports.deleteReel = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const reelId = toObjectId(req.params.reelId);
+
+    if (!userId || !reelId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    const reel = await getCollection('reels').findOne({ _id: reelId });
+
+    if (!reel) {
+        return res.status(404).json({
+            success: false,
+            message: 'Reel not found',
+        });
+    }
+
+    if (reel.userId.toString() !== userId.toString()) {
+        return res.status(403).json({
+            success: false,
+            message: 'You can only delete your own reels',
+        });
+    }
+
+    await Promise.all([
+        getCollection('reels').deleteOne({ _id: reelId }),
+        getCollection('likes').deleteMany({ targetType: 'reel', targetId: reelId }),
+        getCollection('comments').deleteMany({ targetType: 'reel', targetId: reelId }),
+        getCollection('notifications').deleteMany({ entityType: 'reel', entityId: reelId }),
+    ]);
+
+    res.json({
+        success: true,
+        message: 'Reel deleted',
+    });
+});

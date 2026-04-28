@@ -1,16 +1,28 @@
-/**
- * instaJOY Backend Server
- * Express.js + MongoDB Native Driver
- */
+const fs = require('fs');
+const path = require('path');
 
-require('dotenv').config();
+const dotenv = require('dotenv');
+
+[
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), 'backend/.env'),
+].some((candidate) => {
+    if (fs.existsSync(candidate)) {
+        dotenv.config({ path: candidate });
+        return true;
+    }
+
+    return false;
+});
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { connectDB } = require('./utils/database');
 
-// Import routes
+const { connectDB, closeDB } = require('./utils/database');
+const errorHandler = require('./middleware/errorHandler');
+
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const postRoutes = require('./routes/postRoutes');
@@ -19,85 +31,95 @@ const messageRoutes = require('./routes/messageRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const followRoutes = require('./routes/followRoutes');
+const { authLimiter } = require('./middleware/rateLimiters');
 
-// Import middleware
-const errorHandler = require('./middleware/errorHandler');
+function requireEnv(name) {
+    if (!process.env[name]) {
+        throw new Error(`${name} is required`);
+    }
+}
 
-// Initialize Express
+function getAllowedOrigins() {
+    const configuredOrigins = [
+        process.env.FRONTEND_URL,
+        ...(process.env.FRONTEND_URLS || '').split(','),
+    ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+
+    if (process.env.NODE_ENV !== 'production') {
+        configuredOrigins.push(
+            'http://127.0.0.1:5500',
+            'http://localhost:5500',
+            'http://127.0.0.1:4173',
+            'http://localhost:4173',
+            'http://127.0.0.1:3000',
+            'http://localhost:3000'
+        );
+    }
+
+    return [...new Set(configuredOrigins)];
+}
+
+const allowedOrigins = getAllowedOrigins();
 const app = express();
+app.set('trust proxy', 1);
 
-// MongoDB connection instance
-let db;
-
-// =====================
-// Security Middleware
-// =====================
-
-// Helmet for security headers
-app.use(helmet());
-
-// CORS configuration
 app.use(
-    cors({
-        origin: process.env.FRONTEND_URL || '*',
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-        credentials: true,
-        optionsSuccessStatus: 200,
+    helmet({
+        crossOriginResourcePolicy: false,
     })
 );
 
-// Rate limiting
-const limiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-    message: 'Too many requests from this IP, please try again later.',
+app.use(
+    cors({
+        origin(origin, callback) {
+            if (!origin) {
+                return callback(null, true);
+            }
+
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+
+            return callback(new Error('Origin not allowed by CORS'));
+        },
+        methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+    })
+);
+
+app.use(express.json({ limit: '3mb' }));
+app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+
+const generalLimiter = rateLimit({
+    windowMs: Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
+    max: Number.parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 150,
     standardHeaders: true,
     legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Too many requests, please try again later.',
+    },
 });
 
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // 5 attempts per window
-    message: 'Too many login attempts, please try again later.',
-    skip: (req) => req.method !== 'POST',
-});
-
-app.use('/api/', limiter);
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
-
-// Body parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
-
-// =====================
-// Health Check
-// =====================
-
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
     res.json({
-        status: 'OK',
-        message: 'instaJOY Backend is running',
+        success: true,
+        status: 'ok',
         timestamp: new Date().toISOString(),
     });
 });
 
-// =====================
-// API Routes
-// =====================
-
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
+app.use('/api', generalLimiter);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/reels', reelRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/follows', followRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/search', searchRoutes);
-app.use('/api/follow', followRoutes);
-
-// =====================
-// 404 Handler
-// =====================
 
 app.use((req, res) => {
     res.status(404).json({
@@ -106,114 +128,53 @@ app.use((req, res) => {
     });
 });
 
-// =====================
-// Error Handler (Must be last)
-// =====================
-
 app.use(errorHandler);
 
-// =====================
-// Start Server
-// =====================
-
-const PORT = process.env.PORT || 5000;
+const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
+let server = null;
 
 async function startServer() {
-    try {
-        // Connect to MongoDB
-        await connectDB();
-        db = require('./utils/database').getDB();
+    requireEnv('MONGODB_URI');
+    requireEnv('JWT_SECRET');
+    requireEnv('JWT_REFRESH_SECRET');
 
-        // Attach db to app for middleware use
-        app.locals.db = db;
+    await connectDB();
 
-        const server = app.listen(PORT, () => {
-            console.log(`
-╔════════════════════════════════╗
-║     instaJOY Backend Server    ║
-╚════════════════════════════════╝
-
-Port: ${PORT}
-Environment: ${process.env.NODE_ENV || 'development'}
-Database: Connected ✓
-
-API Endpoints:
-  ─── Authentication ───
-  POST   /api/auth/register
-  POST   /api/auth/login
-  POST   /api/auth/logout
-  POST   /api/auth/refresh
-  GET    /api/auth/me
-  
-  ─── Users ───
-  GET    /api/user/:username
-  GET    /api/user/:userId/profile
-  POST   /api/user/profile/update
-  POST   /api/user/profile/avatar
-  GET    /api/user/suggested
-  
-  ─── Follow System ───
-  POST   /api/follow/:userId
-  POST   /api/unfollow/:userId
-  GET    /api/follower/:userId
-  GET    /api/following/:userId
-  
-  ─── Posts ───
-  POST   /api/posts/create
-  GET    /api/posts/feed
-  GET    /api/posts/user/:userId
-  GET    /api/posts/:postId
-  DELETE /api/posts/:postId
-  POST   /api/posts/:postId/like
-  POST   /api/posts/:postId/unlike
-  POST   /api/posts/:postId/comment
-  DELETE /api/posts/:postId/comment/:commentId
-  
-  ─── Reels ───
-  POST   /api/reels/create
-  GET    /api/reels/feed
-  POST   /api/reels/:reelId/like
-  POST   /api/reels/:reelId/unlike
-  POST   /api/reels/:reelId/comment
-  
-  ─── Messages ───
-  POST   /api/messages/send
-  GET    /api/messages/:userId
-  GET    /api/messages/list
-  DELETE /api/messages/:messageId
-  
-  ─── Notifications ───
-  GET    /api/notifications
-  POST   /api/notifications/:notificationId/read
-  DELETE /api/notifications/:notificationId
-  
-  ─── Search ───
-  GET    /api/search/users?q=query
-  GET    /api/search/posts?q=query
-  
-  ─── Health ───
-  GET    /api/health
-
-Ready for requests! 🚀
-            `);
-
-        // Graceful shutdown
-        process.on('SIGTERM', () => {
-            console.log('SIGTERM signal received: closing HTTP server');
-            server.close(async () => {
-                await require('./utils/database').closeDB();
-                process.exit(0);
-            });
-        });
-
-    } catch (error) {
-        console.error('✗ Failed to start server:', error.message);
-        if (process.env.NODE_ENV === 'production') {
-            process.exit(1);
-        }
-    }
+    server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running on PORT ${PORT}`);
+    });
 }
 
-startServer();
+async function shutdown(signal) {
+    if (signal) {
+        console.log(`${signal} received, shutting down`);
+    }
 
-module.exports = app;
+    if (server) {
+        await new Promise((resolve) => server.close(resolve));
+        server = null;
+    }
+
+    await closeDB();
+}
+
+if (require.main === module) {
+    startServer().catch(async (error) => {
+        console.error('Failed to start server:', error.message);
+        await shutdown();
+        process.exit(1);
+    });
+
+    ['SIGINT', 'SIGTERM'].forEach((signal) => {
+        process.on(signal, async () => {
+            await shutdown(signal);
+            process.exit(0);
+        });
+    });
+}
+
+module.exports = {
+    app,
+    shutdown,
+    startServer,
+};

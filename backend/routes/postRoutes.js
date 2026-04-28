@@ -1,78 +1,19 @@
-/**
- * Post Routes
- */
-
 const express = require('express');
-const { protect, optionalAuth } = require('../middleware/auth');
+
 const postController = require('../controllers/postController');
+const { optionalAuth, protect } = require('../middleware/auth');
+const { createContentLimiter } = require('../middleware/rateLimiters');
 
 const router = express.Router();
 
-/**
- * POST /api/posts/create
- * Create new post
- */
-router.post('/create', protect, postController.createPost);
-
-/**
- * GET /api/posts/feed
- * Get feed posts with pagination
- */
+router.post('/', protect, createContentLimiter, postController.createPost);
 router.get('/feed', optionalAuth, postController.getFeed);
-
-/**
- * GET /api/posts/user/:userId
- * Get user's posts
- */
-router.get('/user/:userId', postController.getUserPosts);
-
-/**
- * POST /api/posts/:postId/like
- * Like a post
- */
+router.get('/user/:username', optionalAuth, postController.getUserPosts);
+router.get('/:postId', optionalAuth, postController.getPostById);
+router.get('/:postId/comments', protect, postController.getComments);
 router.post('/:postId/like', protect, postController.likePost);
-
-/**
- * POST /api/posts/:postId/unlike
- * Unlike a post
- */
-router.post('/:postId/unlike', protect, postController.unlikePost);
-
-/**
- * POST /api/posts/:postId/comment
- * Comment on a post
- */
-router.post('/:postId/comment', protect, postController.commentOnPost);
-
-/**
- * DELETE /api/posts/:postId
- * Delete a post
- */
+router.delete('/:postId/like', protect, postController.unlikePost);
+router.post('/:postId/comments', protect, createContentLimiter, postController.commentOnPost);
 router.delete('/:postId', protect, postController.deletePost);
-
-module.exports = router;
-
- * Unlike post
- * POST /api/posts/:postId/unlike
- */
-router.post('/:postId/unlike', protect, postController.unlikePost);
-
-/**
- * Get comments
- * GET /api/posts/:postId/comments
- */
-router.get('/:postId/comments', postController.getComments);
-
-/**
- * Add comment
- * POST /api/posts/:postId/comment
- */
-router.post('/:postId/comment', protect, [body('text').trim().notEmpty().withMessage('Comment cannot be empty')], postController.addComment);
-
-/**
- * Delete comment
- * DELETE /api/posts/:postId/comment/:commentId
- */
-router.delete('/:postId/comment/:commentId', protect, postController.deleteComment);
 
 module.exports = router;

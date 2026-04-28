@@ -1,15 +1,12 @@
-/**
- * Message Routes
- */
-
 const express = require('express');
-const { protect } = require('../middleware/auth');
+
 const messageController = require('../controllers/messageController');
+const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/send', protect, messageController.sendMessage);
+router.get('/conversations', protect, messageController.getConversations);
 router.get('/:userId', protect, messageController.getMessages);
-router.get('/list/all', protect, messageController.getConversations);
+router.post('/', protect, messageController.sendMessage);
 
 module.exports = router;

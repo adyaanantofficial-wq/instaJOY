@@ -1,37 +1,39 @@
 @echo off
-REM INSTAJOY Local Development Server
-REM This script starts a local HTTP server for development
+setlocal
 
-echo ====================================
-echo INSTAJOY - Local Development Server
-echo ====================================
+echo ======================================
+echo       instaJOY Server Startup
+echo ======================================
 echo.
 
-cd /d "c:\Users\prana\OneDrive\Desktop\instaJOY"
+if not exist ".env" if not exist "backend\.env" (
+    echo ERROR: No environment file found.
+    echo.
+    echo Create either:
+    echo   .env
+    echo or
+    echo   backend\.env
+    echo.
+    echo You can copy .env.example and fill in your values.
+    echo.
+    pause
+    exit /b 1
+)
 
-echo Starting local server on http://localhost:8000
-echo Press Ctrl+C to stop the server
-echo.
-
-REM Check if Python is available
-python --version >nul 2>&1
-if %errorlevel% equ 0 (
-    echo Using Python HTTP Server...
-    python -m http.server 8000
-) else (
-    REM Check if Node.js http-server is available
-    http-server --version >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo Using Node.js HTTP Server...
-        http-server -p 8000
-    ) else (
-        echo ERROR: Neither Python nor Node.js http-server found!
-        echo.
-        echo Please install one of the following:
-        echo 1. Python (https://python.org)
-        echo 2. Node.js with http-server (npm install -g http-server)
-        echo.
+if not exist "node_modules" (
+    echo Installing project dependencies...
+    call npm install
+    if errorlevel 1 (
+        echo Failed to install dependencies.
         pause
         exit /b 1
     )
 )
+
+echo.
+echo Starting server...
+echo.
+
+call npm run dev
+
+pause

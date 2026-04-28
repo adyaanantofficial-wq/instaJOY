@@ -1,69 +1,60 @@
-/**
- * Authentication Middleware
- * JWT verification for protected routes
- */
-
 const jwt = require('jsonwebtoken');
 
-/**
- * Middleware to protect routes - requires valid JWT token
- */
-const protect = (req, res, next) => {
-    let token;
+function readBearerToken(req) {
+    const header = req.headers.authorization || '';
 
-    // Get token from header
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-        token = req.headers.authorization.split(' ')[1];
+    if (!header.startsWith('Bearer ')) {
+        return null;
     }
 
-    // Make sure token exists
+    return header.slice(7).trim();
+}
+
+function attachUserFromToken(req) {
+    const token = readBearerToken(req);
+
     if (!token) {
-        return res.status(401).json({
-            success: false,
-            message: 'Not authorized to access this route',
-        });
+        return null;
     }
 
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.userId = decoded.userId;
+    req.user = decoded;
+    return decoded;
+}
+
+function protect(req, res, next) {
     try {
-        // Verify token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.userId = decoded.userId;
-        req.user = decoded;
-        next();
+        const decoded = attachUserFromToken(req);
+
+        if (!decoded) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required',
+            });
+        }
+
+        return next();
     } catch (error) {
         return res.status(401).json({
             success: false,
-            message: 'Token is not valid',
+            message: 'Invalid or expired token',
         });
     }
-};
+}
 
-/**
- * Optional authentication - doesn't fail if no token
- */
-const optionalAuth = (req, res, next) => {
-    let token;
-
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-        token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (token) {
-        try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.userId = decoded.userId;
-            req.user = decoded;
-        } catch (error) {
-            // Token invalid, continue without auth
-            req.user = null;
-            req.userId = null;
-        }
+function optionalAuth(req, res, next) {
+    try {
+        attachUserFromToken(req);
+    } catch (error) {
+        req.user = null;
+        req.userId = null;
     }
 
     next();
-};
+}
 
 module.exports = {
-    protect,
     optionalAuth,
+    protect,
 };

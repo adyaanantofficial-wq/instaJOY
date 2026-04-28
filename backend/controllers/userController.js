@@ -1,204 +1,117 @@
-/**
- * User Controller
- */
+const { getCollection } = require('../utils/database');
+const asyncHandler = require('../utils/asyncHandler');
+const { MAX_AVATAR_BYTES, compressImageDataUri } = require('../utils/media');
+const { serializeUserSummary } = require('../utils/serializers');
+const { normalizeUsername, sanitizePlainText, toObjectId } = require('../utils/text');
+const { ensureValidRequest } = require('../utils/validation');
 
-const User = require('../models/User');
+async function buildProfilePayload(user, viewerId) {
+    const followsCollection = getCollection('follows');
+    const postsCollection = getCollection('posts');
+    const reelsCollection = getCollection('reels');
 
-/**
- * Get user by username
- * GET /api/user/:username
- */
-exports.getUserByUsername = async (req, res, next) => {
-    try {
-        const { username } = req.params;
+    const [followerCount, followingCount, postCount, reelCount, isFollowing] = await Promise.all([
+        followsCollection.countDocuments({ followingId: user._id }),
+        followsCollection.countDocuments({ followerId: user._id }),
+        postsCollection.countDocuments({ userId: user._id }),
+        reelsCollection.countDocuments({ userId: user._id }),
+        viewerId
+            ? followsCollection.countDocuments({
+                  followerId: viewerId,
+                  followingId: user._id,
+              })
+            : 0,
+    ]);
 
-        const user = await User.findOne({ username }).populate('followers following');
+    return {
+        ...serializeUserSummary(user),
+        followerCount,
+        followingCount,
+        postCount,
+        reelCount,
+        isFollowing: Boolean(isFollowing),
+        isOwnProfile: viewerId ? viewerId.toString() === user._id.toString() : false,
+    };
+}
 
-        if (!user || !user.isActive) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found',
-            });
-        }
+exports.getCurrentProfile = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const user = userId ? await getCollection('users').findOne({ _id: userId }) : null;
 
-        res.status(200).json({
-            success: true,
-            user: {
-                _id: user._id,
-                username: user.username,
-                email: user.email,
-                bio: user.bio,
-                profileImage: user.profileImage,
-                followers: user.followers,
-                following: user.following,
-                postsCount: user.postsCount,
-                createdAt: user.createdAt,
-            },
+    if (!user) {
+        return res.status(404).json({
+            success: false,
+            message: 'User not found',
         });
-    } catch (error) {
-        next(error);
     }
-};
 
-/**
- * Update user profile
- * POST /api/user/profile/update
- */
-exports.updateProfile = async (req, res, next) => {
-    try {
-        const { bio, profileImage } = req.body;
-        const userId = req.user.userId;
+    res.json({
+        success: true,
+        profile: await buildProfilePayload(user, userId),
+    });
+});
 
-        const updateData = {};
+exports.getUserByUsername = asyncHandler(async (req, res) => {
+    const username = normalizeUsername(req.params.username);
+    const viewerId = toObjectId(req.userId);
+    const user = await getCollection('users').findOne({ username });
 
-        if (bio !== undefined) {
-            if (bio.length > 150) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Bio must be 150 characters or less',
-                });
-            }
-            updateData.bio = bio;
-        }
-
-        if (profileImage) {
-            // Validate base64 image
-            if (profileImage.length > 5242880) {
-                // 5MB limit
-                return res.status(400).json({
-                    success: false,
-                    message: 'Image too large (max 5MB)',
-                });
-            }
-            updateData.profileImage = profileImage;
-        }
-
-        const user = await User.findByIdAndUpdate(userId, updateData, {
-            new: true,
-            runValidators: true,
+    if (!user) {
+        return res.status(404).json({
+            success: false,
+            message: 'User not found',
         });
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found',
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Profile updated',
-            user,
-        });
-    } catch (error) {
-        next(error);
     }
-};
 
-/**
- * Follow user
- * POST /api/user/follow
- */
-exports.followUser = async (req, res, next) => {
-    try {
-        const { userId } = req.body;
-        const currentUserId = req.user.userId;
+    res.json({
+        success: true,
+        profile: await buildProfilePayload(user, viewerId),
+    });
+});
 
-        if (currentUserId === userId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cannot follow yourself',
-            });
-        }
+exports.updateProfile = asyncHandler(async (req, res) => {
+    ensureValidRequest(req);
 
-        // Add to current user's following
-        await User.findByIdAndUpdate(currentUserId, {
-            $addToSet: { following: userId },
+    const userId = toObjectId(req.userId);
+
+    if (!userId) {
+        return res.status(401).json({
+            success: false,
+            message: 'Invalid token',
         });
-
-        // Add to target user's followers
-        const targetUser = await User.findByIdAndUpdate(userId, {
-            $addToSet: { followers: currentUserId },
-        });
-
-        if (!targetUser) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found',
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Followed user',
-        });
-    } catch (error) {
-        next(error);
     }
-};
 
-/**
- * Unfollow user
- * POST /api/user/unfollow
- */
-exports.unfollowUser = async (req, res, next) => {
-    try {
-        const { userId } = req.body;
-        const currentUserId = req.user.userId;
+    const update = {
+        updatedAt: new Date(),
+    };
 
-        // Remove from current user's following
-        await User.findByIdAndUpdate(currentUserId, {
-            $pull: { following: userId },
+    if (typeof req.body.bio === 'string') {
+        update.bio = sanitizePlainText(req.body.bio, 160);
+    }
+
+    if (req.body.profileImage) {
+        const compressed = await compressImageDataUri(req.body.profileImage, {
+            maxBytes: MAX_AVATAR_BYTES,
+            maxWidth: 512,
+            maxHeight: 512,
         });
+        update.profileImage = compressed.dataUri;
+    } else if (req.body.removeProfileImage) {
+        update.profileImage = null;
+    }
 
-        // Remove from target user's followers
-        const targetUser = await User.findByIdAndUpdate(userId, {
-            $pull: { followers: currentUserId },
-        });
-
-        if (!targetUser) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found',
-            });
+    await getCollection('users').updateOne(
+        { _id: userId },
+        {
+            $set: update,
         }
+    );
 
-        res.status(200).json({
-            success: true,
-            message: 'Unfollowed user',
-        });
-    } catch (error) {
-        next(error);
-    }
-};
+    const user = await getCollection('users').findOne({ _id: userId });
 
-/**
- * Get suggested users
- * GET /api/user/suggested
- */
-exports.getSuggestedUsers = async (req, res, next) => {
-    try {
-        const currentUserId = req.user.userId;
-        const limit = parseInt(req.query.limit) || 5;
-
-        const currentUser = await User.findById(currentUserId);
-
-        // Get users that current user is not following and are not themselves
-        const suggestedUsers = await User.find({
-            _id: {
-                $ne: currentUserId,
-                $nin: currentUser.following,
-            },
-            isActive: true,
-        })
-            .select('username profileImage bio followers')
-            .limit(limit);
-
-        res.status(200).json({
-            success: true,
-            users: suggestedUsers,
-        });
-    } catch (error) {
-        next(error);
-    }
-};
+    res.json({
+        success: true,
+        message: 'Profile updated',
+        profile: await buildProfilePayload(user, userId),
+    });
+});

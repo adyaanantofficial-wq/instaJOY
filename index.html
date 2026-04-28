@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#f46a3b">
+    <meta name="description" content="instaJOY is a lightweight social app for sharing jokes, ideas, fun knowledge, photos, and short reels.">
+    <title>instaJOY</title>
+    <link rel="icon" href="ilogo.png">
+    <link rel="stylesheet" href="frontend/css/app.css">
+</head>
+<body>
+    <div id="splashScreen" class="splash-screen">
+        <img src="ilogo.png" alt="instaJOY logo" class="splash-logo">
+        <h1>instaJOY</h1>
+        <p>Share bright moments, ideas, and everyday fun.</p>
+    </div>
+
+    <div id="appShell" class="app-shell" hidden>
+        <header class="topbar">
+            <div class="brand">
+                <img src="ilogo.png" alt="instaJOY logo" class="brand-logo">
+                <div>
+                    <div class="brand-name">instaJOY</div>
+                    <div id="brandSubtitle" class="brand-subtitle">Home</div>
+                </div>
+            </div>
+            <button id="topbarAction" class="ghost-button" type="button">Refresh</button>
+        </header>
+
+        <main class="main-shell">
+            <section id="authView" class="view auth-view"></section>
+
+            <section id="homeView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Fresh joy</h2>
+                    <p>Newest posts from people you follow, with a global fallback so the feed never feels empty.</p>
+                </div>
+                <div id="homeFeed" class="stack-list"></div>
+                <button id="homeLoadMore" class="load-more" type="button" hidden>Load more posts</button>
+                <div id="homeEmpty" class="empty-state" hidden></div>
+            </section>
+
+            <section id="reelsView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Reels</h2>
+                    <p>Short, lightweight clips that pause themselves when they leave the screen.</p>
+                </div>
+                <div id="reelsFeed" class="stack-list reels-list"></div>
+                <button id="reelsLoadMore" class="load-more" type="button" hidden>Load more reels</button>
+                <div id="reelsEmpty" class="empty-state" hidden></div>
+            </section>
+
+            <section id="messagesView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Messages</h2>
+                    <p>Simple one-to-one chat history, optimized for quick loading.</p>
+                </div>
+                <div class="messages-layout">
+                    <aside class="panel">
+                        <div class="panel-header">
+                            <h3>Conversations</h3>
+                            <button id="messagesRefresh" class="ghost-button" type="button">Refresh</button>
+                        </div>
+                        <div id="conversationList" class="conversation-list"></div>
+                    </aside>
+                    <section class="panel">
+                        <div id="chatHeader" class="panel-header">
+                            <h3>Choose a chat</h3>
+                            <button id="chatBackButton" class="ghost-button compact" type="button" hidden>Back</button>
+                        </div>
+                        <div id="messageThread" class="message-thread empty-thread">
+                            <p>Select a conversation or start one from Search or Profile.</p>
+                        </div>
+                        <form id="messageComposer" class="message-composer" hidden>
+                            <input id="messageInput" type="text" maxlength="1000" placeholder="Write a message" autocomplete="off">
+                            <button class="primary-button" type="submit">Send</button>
+                        </form>
+                    </section>
+                </div>
+            </section>
+
+            <section id="searchView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Search</h2>
+                    <p>Find people by username or discover text posts by keyword.</p>
+                </div>
+                <label class="search-box" for="searchInput">
+                    <span>Search</span>
+                    <input id="searchInput" type="search" placeholder="Try a username, joke, or idea">
+                </label>
+                <div id="searchStatus" class="status-text">Type at least 2 characters to search.</div>
+                <div class="search-columns">
+                    <div class="panel">
+                        <div class="panel-header"><h3>Users</h3></div>
+                        <div id="userSearchResults" class="stack-list compact-list"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header"><h3>Text posts</h3></div>
+                        <div id="postSearchResults" class="stack-list compact-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="notificationsView" class="view" hidden>
+                <div class="view-intro">
+                    <h2>Notifications</h2>
+                    <p>Likes, follows, and new message alerts stay in one calm inbox.</p>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>Recent activity</h3>
+                        <button id="markAllNotifications" class="ghost-button" type="button">Mark all read</button>
+                    </div>
+                    <div id="notificationsList" class="stack-list compact-list"></div>
+                </div>
+            </section>
+
+            <section id="profileView" class="view" hidden>
+                <div id="profileSummary" class="profile-summary"></div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>Posts grid</h3>
+                        <button id="profileRefresh" class="ghost-button" type="button">Refresh</button>
+                    </div>
+                    <div id="profileGrid" class="profile-grid"></div>
+                </div>
+            </section>
+        </main>
+
+        <nav id="bottomNav" class="bottom-nav" hidden>
+            <button class="nav-button active" type="button" data-view="home">
+                <span>Home</span>
+            </button>
+            <button class="nav-button" type="button" data-view="reels">
+                <span>Reels</span>
+            </button>
+            <button class="nav-button" type="button" data-view="messages">
+                <span>Messages</span>
+            </button>
+            <button class="nav-button" type="button" data-view="search">
+                <span>Search</span>
+            </button>
+            <button class="nav-button" type="button" data-view="notifications">
+                <span>Alerts</span>
+            </button>
+            <button class="nav-button nav-create" id="openCreateButton" type="button">
+                <span>+ Post</span>
+            </button>
+            <button class="nav-button" type="button" data-view="profile">
+                <span>Profile</span>
+            </button>
+        </nav>
+    </div>
+
+    <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="createModal" class="modal-shell" hidden>
+        <div class="modal-card">
+            <div class="panel-header">
+                <h3>Create a post</h3>
+                <button data-close-modal="createModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <div class="tab-row">
+                <button class="tab-button active" type="button" data-create-type="text">Text</button>
+                <button class="tab-button" type="button" data-create-type="image">Image</button>
+                <button class="tab-button" type="button" data-create-type="reel">Reel</button>
+            </div>
+            <form id="createForm" class="form-stack">
+                <div id="textFields" class="form-stack">
+                    <label>
+                        Category
+                        <select id="textCategory">
+                            <option value="jokes">Jokes</option>
+                            <option value="ideas">Ideas</option>
+                            <option value="fun-knowledge">Fun knowledge</option>
+                        </select>
+                    </label>
+                    <label>
+                        Text
+                        <textarea id="textPostBody" maxlength="500" rows="5" placeholder="Share something joyful in 500 characters or less."></textarea>
+                    </label>
+                </div>
+
+                <div id="imageFields" class="form-stack" hidden>
+                    <label>
+                        Caption
+                        <textarea id="imageCaption" maxlength="500" rows="4" placeholder="Add a short caption (optional)."></textarea>
+                    </label>
+                    <label class="file-picker">
+                        <span>Choose image</span>
+                        <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp">
+                    </label>
+                    <div id="imageHint" class="status-text">Images are compressed on-device and on the server to stay under 200KB.</div>
+                    <div id="imagePreview" class="media-preview" hidden></div>
+                </div>
+
+                <div id="reelFields" class="form-stack" hidden>
+                    <label>
+                        Caption
+                        <textarea id="reelCaption" maxlength="500" rows="4" placeholder="Keep it short and punchy."></textarea>
+                    </label>
+                    <label class="file-picker">
+                        <span>Choose reel</span>
+                        <input id="reelInput" type="file" accept="video/mp4,video/webm,video/ogg">
+                    </label>
+                    <div id="reelHint" class="status-text">Reels must be 1MB or smaller and 30 seconds or less.</div>
+                    <div id="reelPreview" class="media-preview" hidden></div>
+                </div>
+
+                <button id="createSubmit" class="primary-button" type="submit">Publish</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="commentsModal" class="modal-shell" hidden>
+        <div class="modal-card">
+            <div class="panel-header">
+                <h3>Comments</h3>
+                <button data-close-modal="commentsModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <div id="commentsList" class="stack-list compact-list"></div>
+            <form id="commentForm" class="message-composer modal-composer">
+                <input id="commentInput" type="text" maxlength="280" placeholder="Write a comment">
+                <button class="primary-button" type="submit">Post</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="profileEditModal" class="modal-shell" hidden>
+        <div class="modal-card">
+            <div class="panel-header">
+                <h3>Edit profile</h3>
+                <button data-close-modal="profileEditModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <form id="profileEditForm" class="form-stack">
+                <label>
+                    Bio
+                    <textarea id="profileBioInput" maxlength="160" rows="4" placeholder="Tell people what makes you smile."></textarea>
+                </label>
+                <label class="file-picker">
+                    <span>Update picture</span>
+                    <input id="profileImageInput" type="file" accept="image/png,image/jpeg,image/webp">
+                </label>
+                <div id="profileImagePreview" class="media-preview" hidden></div>
+                <label class="checkbox-row">
+                    <input id="removeProfileImage" type="checkbox">
+                    <span>Use the default instaJOY logo again</span>
+                </label>
+                <button class="primary-button" type="submit">Save changes</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="frontend/js/config.js"></script>
+    <script src="frontend/js/app.js"></script>
+</body>
+</html>
