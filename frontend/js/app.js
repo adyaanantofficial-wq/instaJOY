@@ -5,6 +5,7 @@
     const TOKEN_KEY = config.TOKEN_KEY || 'instajoy_access_token';
     const REFRESH_TOKEN_KEY = config.REFRESH_TOKEN_KEY || 'instajoy_refresh_token';
     const USER_KEY = config.USER_KEY || 'instajoy_user';
+    const AUTH_STORAGE_KEY = 'INSTAJOY_AUTH_MODE';
     const MAX_IMAGE_BYTES = 200 * 1024;
     const MAX_REEL_BYTES = 1024 * 1024;
     const MAX_REEL_DURATION = 30;
@@ -71,9 +72,9 @@
 
     async function init() {
         cacheDom();
-        // Initialize auth mode: prefer explicit `authMode`, fall back to legacy `guest` flag
-        const storedMode = localStorage.getItem('authMode');
-        const legacyGuest = localStorage.getItem('guest') === 'true';
+        // Initialize auth mode: prefer session-scoped `INSTAJOY_AUTH_MODE`, fall back to legacy localStorage
+        const storedMode = sessionStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem('authMode');
+        const legacyGuest = (sessionStorage.getItem('guest') === 'true') || (localStorage.getItem('guest') === 'true');
         if (storedMode === 'guest' || legacyGuest) {
             state.authState = 'guest';
         } else if (storedMode === 'user') {
@@ -192,7 +193,7 @@
     // ============================================
     
     function isGuestMode() {
-        return state.authState === 'guest' || localStorage.getItem('guest') === 'true';
+        return state.authState === 'guest' || sessionStorage.getItem(AUTH_STORAGE_KEY) === 'guest' || localStorage.getItem('guest') === 'true';
     }
 
     function requireLogin(actionName) {
@@ -217,11 +218,11 @@
     function setAuthMode(mode) {
         state.authState = mode === 'user' ? 'user' : 'guest';
         try {
-            localStorage.setItem('authMode', state.authState);
+            sessionStorage.setItem(AUTH_STORAGE_KEY, state.authState);
             if (state.authState === 'guest') {
-                localStorage.setItem('guest', 'true');
+                sessionStorage.setItem('guest', 'true');
             } else {
-                localStorage.removeItem('guest');
+                sessionStorage.removeItem('guest');
             }
         } catch (e) {
             // ignore storage errors
@@ -362,8 +363,8 @@
     function showAuthView() {
         state.activeView = 'auth';
         state.authState = null;
-        localStorage.removeItem('authMode');
-        localStorage.removeItem('guest');
+        sessionStorage.removeItem(AUTH_STORAGE_KEY);
+        sessionStorage.removeItem('guest');
         if (dom.landingPage) dom.landingPage.hidden = true;
         if (dom.appShell) dom.appShell.hidden = false;
         if (dom.bottomNav) dom.bottomNav.hidden = true;
@@ -1711,8 +1712,8 @@
         resetCreateForm();
         
         // Reset auth mode and return to landing page
-        localStorage.removeItem('authMode');
-        localStorage.removeItem('guest');
+        sessionStorage.removeItem(AUTH_STORAGE_KEY);
+        sessionStorage.removeItem('guest');
         state.authState = null;
         
         if (dom.landingPage) dom.landingPage.hidden = false;
@@ -1956,7 +1957,7 @@
         }
         // persist authMode as well
         try {
-            localStorage.setItem('authMode', state.authState || 'guest');
+            sessionStorage.setItem(AUTH_STORAGE_KEY, state.authState || 'guest');
         } catch (e) {}
     }
 

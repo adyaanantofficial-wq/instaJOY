@@ -17,6 +17,7 @@
     postLoading: false,
     reelLoading: false,
   };
+  const AUTH_STORAGE_KEY = 'INSTAJOY_AUTH_MODE';
 
   const dom = {};
 
@@ -93,7 +94,7 @@
       state.user = session.user;
       await loadCurrentUserProfile();
       await attemptRegisterFcmToken();
-    } else if (localStorage.getItem('authMode') === 'guest') {
+    } else if (sessionStorage.getItem(AUTH_STORAGE_KEY) === 'guest' || localStorage.getItem('guest') === 'true') {
       state.authMode = 'guest';
     } else {
       state.authMode = 'guest';
@@ -175,7 +176,7 @@
       if (data?.user) {
         state.authMode = 'user';
         state.user = data.user;
-        localStorage.setItem('authMode', 'user');
+        sessionStorage.setItem(AUTH_STORAGE_KEY, 'user');
         await loadCurrentUserProfile();
         await attemptRegisterFcmToken();
         showToast('Logged in successfully', 'success');
@@ -222,7 +223,7 @@
       }
 
       pendingProfile.id = data.user.id;
-      localStorage.setItem('pendingProfile', JSON.stringify(pendingProfile));
+      sessionStorage.setItem('pendingProfile', JSON.stringify(pendingProfile));
 
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData?.session;
@@ -233,7 +234,7 @@
 
       state.authMode = 'user';
       state.user = session.user;
-      localStorage.setItem('authMode', 'user');
+      sessionStorage.setItem(AUTH_STORAGE_KEY, 'user');
 
       const profileInsert = await supabase.from('profiles').insert(pendingProfile);
       if (profileInsert.error) {
@@ -241,7 +242,7 @@
         return;
       }
 
-      localStorage.removeItem('pendingProfile');
+      sessionStorage.removeItem('pendingProfile');
       await loadCurrentUserProfile();
       await attemptRegisterFcmToken();
       showToast('Account created. Welcome to instaJOY!', 'success');
@@ -255,7 +256,7 @@
   async function handleGuestMode() {
     state.authMode = 'guest';
     state.user = null;
-    localStorage.setItem('authMode', 'guest');
+    sessionStorage.setItem(AUTH_STORAGE_KEY, 'guest');
     showToast('Guest mode enabled. Browse freely, write actions are disabled.', 'info');
     await renderApp();
   }
@@ -269,7 +270,7 @@
       return;
     }
 
-    const pendingProfileString = localStorage.getItem('pendingProfile');
+    const pendingProfileString = sessionStorage.getItem('pendingProfile');
     if (!pendingProfileString) return;
 
     let pendingProfile;
@@ -284,7 +285,7 @@
     const insertResult = await supabase.from('profiles').insert(pendingProfile);
     if (!insertResult.error) {
       state.user.profile = pendingProfile;
-      localStorage.removeItem('pendingProfile');
+      sessionStorage.removeItem('pendingProfile');
     }
   }
 
