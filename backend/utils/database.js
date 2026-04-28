@@ -43,6 +43,36 @@ function rewriteMongoConnectionError(error, uri) {
 
 const fallbackDnsServers = ['8.8.8.8', '1.1.1.1'];
 
+function getMongoDBNameFromUri(uri) {
+    try {
+        const parsed = new URL(uri);
+        const pathname = String(parsed.pathname || '').replace(/^\//, '');
+        return pathname || null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function normalizeMongoDBName(uri, explicitDbName) {
+    const uriDbName = getMongoDBNameFromUri(uri);
+    const normalizedExplicitDbName = explicitDbName ? String(explicitDbName).trim() : '';
+
+    if (!normalizedExplicitDbName) {
+        return uriDbName;
+    }
+
+    if (uriDbName && uriDbName.toLowerCase() === normalizedExplicitDbName.toLowerCase()) {
+        if (uriDbName !== normalizedExplicitDbName) {
+            console.warn(
+                `MONGODB_DB differs only by case from the database name in MONGODB_URI. Using "${uriDbName}" to avoid MongoDB case conflicts.`
+            );
+        }
+        return uriDbName;
+    }
+
+    return normalizedExplicitDbName;
+}
+
 async function resolveSrvRecords(hostname) {
     const resolver = new dns.promises.Resolver();
     resolver.setServers(fallbackDnsServers);
@@ -119,11 +149,13 @@ async function connectDB() {
         return db;
     }
 
-    // Use environment variable or forcefully connect using provided credentials
     const uri = process.env.MONGODB_URI || 'mongodb+srv://adyaanantofficial_db_user:3lMYfcXZ8V7JmFY7@cluster0.mnhzxzh.mongodb.net/instaJOY?retryWrites=true&w=majority&appName=Cluster0';
     if (!uri) {
         throw new Error('MONGODB_URI is required');
     }
+
+    const explicitDbName = process.env.MONGODB_DB ? String(process.env.MONGODB_DB).trim() : '';
+    const dbName = normalizeMongoDBName(uri, explicitDbName);
 
     async function attemptConnect(uri) {
         client = new MongoClient(uri, {
@@ -141,7 +173,7 @@ async function connectDB() {
         });
 
         await client.connect();
-        db = process.env.MONGODB_DB ? client.db(process.env.MONGODB_DB) : client.db();
+        db = dbName ? client.db(dbName) : client.db();
         await db.command({ ping: 1 });
         await createIndexes(db);
     }
