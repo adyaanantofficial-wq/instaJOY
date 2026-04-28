@@ -5,8 +5,8 @@ const { optionalAuth, protect } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/', protect, searchController.searchAll);
-router.get('/users', protect, searchController.searchUsers);
+router.get('/', optionalAuth, searchController.searchAll);
+router.get('/users', optionalAuth, searchController.searchUsers);
 router.get('/posts', optionalAuth, searchController.searchPosts);
 
 module.exports = router;

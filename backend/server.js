@@ -177,12 +177,40 @@ app.use(errorHandler);
 const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
 let server = null;
 
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function connectWithRetry(attempts = 5, delayMs = 3000) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+            await connectDB();
+            console.log('MongoDB connected successfully');
+            return;
+        } catch (error) {
+            lastError = error;
+            console.warn(`MongoDB connection attempt ${attempt} of ${attempts} failed: ${error.message}`);
+            if (attempt < attempts) {
+                await sleep(delayMs);
+            }
+        }
+    }
+
+    throw lastError;
+}
+
 async function startServer() {
-    // requireEnv('MONGODB_URI'); // Disabled to allow hardcoded fallback in database.js
+    requireEnv('MONGODB_URI');
     requireEnv('JWT_SECRET');
     requireEnv('JWT_REFRESH_SECRET');
 
-    await connectDB();
+    try {
+        await connectWithRetry();
+    } catch (error) {
+        console.error('Failed to connect to MongoDB after retries:', error.message);
+    }
 
     server = app.listen(PORT, '0.0.0.0', () => {
         console.log(`Server running on PORT ${PORT}`);
@@ -203,6 +231,16 @@ async function shutdown(signal) {
 }
 
 if (require.main === module) {
+    process.on('unhandledRejection', (reason) => {
+        console.error('Unhandled promise rejection:', reason);
+    });
+
+    process.on('uncaughtException', async (error) => {
+        console.error('Uncaught exception:', error);
+        await shutdown('uncaughtException');
+        process.exit(1);
+    });
+
     startServer().catch(async (error) => {
         console.error('Failed to start server:', error.message);
         await shutdown();
