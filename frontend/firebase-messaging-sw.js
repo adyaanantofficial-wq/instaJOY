@@ -19,3 +19,4 @@ messaging.onBackgroundMessage((payload) => {
     data: payload.data,
   });
 });
+
