@@ -10,8 +10,8 @@ const { protect } = require('../middleware/auth');
 const router = express.Router();
 
 /**
- * Register
  * POST /api/auth/register
+ * Register a new user
  */
 router.post(
     '/register',
@@ -30,8 +30,8 @@ router.post(
 );
 
 /**
- * Login
  * POST /api/auth/login
+ * Login user
  */
 router.post(
     '/login',
@@ -43,10 +43,25 @@ router.post(
 );
 
 /**
- * Refresh Token
  * POST /api/auth/refresh
+ * Refresh JWT token
  */
 router.post('/refresh', authController.refreshToken);
+
+/**
+ * GET /api/auth/me
+ * Get current user
+ */
+router.get('/me', protect, authController.getCurrentUser);
+
+/**
+ * POST /api/auth/logout
+ * Logout user
+ */
+router.post('/logout', protect, authController.logout);
+
+module.exports = router;
+
 
 /**
  * Get current user

@@ -3,7 +3,7 @@
  */
 
 const express = require('express');
-const { protect, optionalAuth } = require('../middleware/auth');
+const { protect } = require('../middleware/auth');
 const postController = require('../controllers/postController');
 
 const router = express.Router();
@@ -16,9 +16,9 @@ router.post('/create', protect, postController.createPost);
 
 /**
  * GET /api/posts/feed
- * Get feed posts with pagination
+ * Get feed posts
  */
-router.get('/feed', optionalAuth, postController.getFeed);
+router.get('/feed', postController.getFeed);
 
 /**
  * GET /api/posts/user/:userId
@@ -49,30 +49,5 @@ router.post('/:postId/comment', protect, postController.commentOnPost);
  * Delete a post
  */
 router.delete('/:postId', protect, postController.deletePost);
-
-module.exports = router;
-
- * Unlike post
- * POST /api/posts/:postId/unlike
- */
-router.post('/:postId/unlike', protect, postController.unlikePost);
-
-/**
- * Get comments
- * GET /api/posts/:postId/comments
- */
-router.get('/:postId/comments', postController.getComments);
-
-/**
- * Add comment
- * POST /api/posts/:postId/comment
- */
-router.post('/:postId/comment', protect, [body('text').trim().notEmpty().withMessage('Comment cannot be empty')], postController.addComment);
-
-/**
- * Delete comment
- * DELETE /api/posts/:postId/comment/:commentId
- */
-router.delete('/:postId/comment/:commentId', protect, postController.deleteComment);
 
 module.exports = router;

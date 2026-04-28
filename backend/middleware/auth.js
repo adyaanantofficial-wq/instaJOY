@@ -1,5 +1,6 @@
 /**
  * Authentication Middleware
+ * JWT verification for protected routes
  */
 
 const jwt = require('jsonwebtoken');
@@ -26,6 +27,7 @@ const protect = (req, res, next) => {
     try {
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.userId = decoded.userId;
         req.user = decoded;
         next();
     } catch (error) {
@@ -49,10 +51,12 @@ const optionalAuth = (req, res, next) => {
     if (token) {
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            req.userId = decoded.userId;
             req.user = decoded;
         } catch (error) {
             // Token invalid, continue without auth
             req.user = null;
+            req.userId = null;
         }
     }
 

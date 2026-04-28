@@ -1,6 +1,6 @@
 /**
  * instaJOY Backend Server
- * Express.js + MongoDB
+ * Express.js + MongoDB Native Driver
  */
 
 require('dotenv').config();
@@ -8,18 +8,26 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const mongoose = require('mongoose');
+const { connectDB } = require('./utils/database');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const postRoutes = require('./routes/postRoutes');
+const reelRoutes = require('./routes/reelRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const searchRoutes = require('./routes/searchRoutes');
+const followRoutes = require('./routes/followRoutes');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
 
 // Initialize Express
 const app = express();
+
+// MongoDB connection instance
+let db;
 
 // =====================
 // Security Middleware
@@ -81,6 +89,11 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/reels', reelRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/follow', followRoutes);
 
 // =====================
 // 404 Handler
@@ -100,84 +113,107 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // =====================
-// Database Connection
-// =====================
-
-async function connectDatabase() {
-    try {
-        const conn = await mongoose.connect(process.env.MONGODB_URI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-        });
-
-        console.log(`✓ MongoDB Connected: ${conn.connection.host}`);
-        return true;
-    } catch (error) {
-        console.error('✗ MongoDB Connection Failed:', error.message);
-        return false;
-    }
-}
-
-// =====================
 // Start Server
 // =====================
 
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
-    const dbConnected = await connectDatabase();
+    try {
+        // Connect to MongoDB
+        await connectDB();
+        db = require('./utils/database').getDB();
 
-    if (!dbConnected && process.env.NODE_ENV === 'production') {
-        console.error('Cannot start server without database connection');
-        process.exit(1);
-    }
+        // Attach db to app for middleware use
+        app.locals.db = db;
 
-    app.listen(PORT, () => {
-        console.log(`
+        const server = app.listen(PORT, () => {
+            console.log(`
 ╔════════════════════════════════╗
 ║     instaJOY Backend Server    ║
 ╚════════════════════════════════╝
 
 Port: ${PORT}
 Environment: ${process.env.NODE_ENV || 'development'}
-Database: ${dbConnected ? 'Connected ✓' : 'Not Connected ✗'}
+Database: Connected ✓
 
 API Endpoints:
+  ─── Authentication ───
   POST   /api/auth/register
   POST   /api/auth/login
+  POST   /api/auth/logout
   POST   /api/auth/refresh
   GET    /api/auth/me
   
+  ─── Users ───
   GET    /api/user/:username
+  GET    /api/user/:userId/profile
   POST   /api/user/profile/update
-  POST   /api/user/follow
-  POST   /api/user/unfollow
+  POST   /api/user/profile/avatar
   GET    /api/user/suggested
   
+  ─── Follow System ───
+  POST   /api/follow/:userId
+  POST   /api/unfollow/:userId
+  GET    /api/follower/:userId
+  GET    /api/following/:userId
+  
+  ─── Posts ───
   POST   /api/posts/create
   GET    /api/posts/feed
-  GET    /api/posts/user/:username
+  GET    /api/posts/user/:userId
+  GET    /api/posts/:postId
   DELETE /api/posts/:postId
   POST   /api/posts/:postId/like
   POST   /api/posts/:postId/unlike
-  GET    /api/posts/:postId/comments
   POST   /api/posts/:postId/comment
   DELETE /api/posts/:postId/comment/:commentId
-
-Health Check:
+  
+  ─── Reels ───
+  POST   /api/reels/create
+  GET    /api/reels/feed
+  POST   /api/reels/:reelId/like
+  POST   /api/reels/:reelId/unlike
+  POST   /api/reels/:reelId/comment
+  
+  ─── Messages ───
+  POST   /api/messages/send
+  GET    /api/messages/:userId
+  GET    /api/messages/list
+  DELETE /api/messages/:messageId
+  
+  ─── Notifications ───
+  GET    /api/notifications
+  POST   /api/notifications/:notificationId/read
+  DELETE /api/notifications/:notificationId
+  
+  ─── Search ───
+  GET    /api/search/users?q=query
+  GET    /api/search/posts?q=query
+  
+  ─── Health ───
   GET    /api/health
 
 Ready for requests! 🚀
-        `);
-    });
+            `);
+
+        // Graceful shutdown
+        process.on('SIGTERM', () => {
+            console.log('SIGTERM signal received: closing HTTP server');
+            server.close(async () => {
+                await require('./utils/database').closeDB();
+                process.exit(0);
+            });
+        });
+
+    } catch (error) {
+        console.error('✗ Failed to start server:', error.message);
+        if (process.env.NODE_ENV === 'production') {
+            process.exit(1);
+        }
+    }
 }
 
 startServer();
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
-    process.exit(0);
-});
 
 module.exports = app;

@@ -2,82 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#667eea">
+    <meta name="description" content="instaJOY - Share Your Joy">
     <title>instaJOY - Share Your Joy</title>
-    <link rel="stylesheet" href="css/auth.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="icon" href="ilogo.png">
 </head>
 <body>
-    <div class="auth-container">
-        <!-- Login Form -->
-        <div id="loginForm" class="auth-form active">
-            <div class="auth-header">
-                <h1>instaJOY</h1>
-                <p>Share Your Joy</p>
-            </div>
-            
-            <form id="loginFormElement">
-                <div class="form-group">
-                    <input 
-                        type="email" 
-                        id="loginEmail" 
-                        placeholder="Email" 
-                        required 
-                        autocomplete="email"
-                    >
-                </div>
-                
-                <div class="form-group">
-                    <input 
-                        type="password" 
-                        id="loginPassword" 
-                        placeholder="Password" 
-                        required
+    <!-- Main app will be loaded by JavaScript -->
+    <script src="js/app.js"></script>
+</body>
+</html>
 
-                    >
-                </div>
-                
-                <button type="submit" class="btn btn-primary" id="loginBtn">
-                    Login
-                </button>
-                
-                <div class="form-message" id="loginError" style="display: none;"></div>
-            </form>
-            
-            <div class="auth-switch">
-                <p>Don't have an account? <a href="#" onclick="toggleAuthForm()">Sign Up</a></p>
-            </div>
-        </div>
-
-        <!-- Signup Form -->
-        <div id="signupForm" class="auth-form">
-            <div class="auth-header">
-                <h1>instaJOY</h1>
-                <p>Create Account</p>
-            </div>
-            
-            <form id="signupFormElement">
-                <div class="form-group">
-                    <input 
-                        type="text" 
-                        id="signupUsername" 
-                        placeholder="Username" 
-                        required
-                    >
-                </div>
-                
-                <div class="form-group">
-                    <input 
-                        type="email" 
-                        id="signupEmail" 
-                        placeholder="Email" 
-                        required 
-                        autocomplete="email"
-                    >
-                </div>
-                
-                <div class="form-group">
-                    <input 
-                        type="password" 
                         id="signupPassword" 
                         placeholder="Password (min 6 chars)" 
                         required
