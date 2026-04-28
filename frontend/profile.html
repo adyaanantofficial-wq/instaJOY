@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - instaJOY</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Top Navigation -->
+    <header class="header">
+        <div class="header-content">
+            <button class="back-btn" onclick="window.history.back()">← Back</button>
+            <div class="header-logo">instaJOY</div>
+            <div class="header-actions">
+                <button id="themeToggle" class="icon-btn" title="Toggle theme">☀️</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="container profile-container">
+        <!-- Profile Header -->
+        <div class="profile-header">
+            <div class="profile-image-wrapper">
+                <img id="profileImage" src="" alt="Profile" class="profile-image">
+                <input type="file" id="profileImageInput" accept="image/*" style="display: none;">
+            </div>
+            
+            <div class="profile-info">
+                <div class="profile-name-section">
+                    <h1 id="profileUsername"></h1>
+                    <button id="editProfileBtn" class="btn btn-secondary" style="display: none;">Edit Profile</button>
+                    <button id="followBtn" class="btn btn-primary" style="display: none;"></button>
+                </div>
+                
+                <div class="profile-stats">
+                    <div class="stat">
+                        <span class="stat-value" id="postCount">0</span>
+                        <span class="stat-label">Posts</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="followersCount">0</span>
+                        <span class="stat-label">Followers</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="followingCount">0</span>
+                        <span class="stat-label">Following</span>
+                    </div>
+                </div>
+                
+                <div class="profile-bio">
+                    <p id="profileBio"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Profile Modal -->
+        <div id="editProfileModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Edit Profile</h2>
+                    <button class="close-modal" onclick="closeEditProfileModal()">✕</button>
+                </div>
+                
+                <form id="editProfileForm">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="editUsername" disabled>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Bio</label>
+                        <textarea id="editBio" placeholder="Tell about yourself" maxlength="150"></textarea>
+                        <small id="bioCount">0/150</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Change Profile Picture</label>
+                        <input type="file" id="editProfileImageInput" accept="image/*">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- User Posts Grid -->
+        <div class="profile-posts-section">
+            <h2>Posts</h2>
+            <div id="userPostsGrid" class="posts-grid">
+                <!-- Posts will be loaded here -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Bottom Navigation (Mobile) -->
+    <nav class="bottom-nav">
+        <a href="feed.html" class="nav-item" data-page="feed">
+            <span class="icon">🏠</span>
+            <span class="label">Home</span>
+        </a>
+        <a href="#" onclick="openSearch()" class="nav-item" data-page="search">
+            <span class="icon">🔍</span>
+            <span class="label">Search</span>
+        </a>
+        <a href="#" onclick="openCreate()" class="nav-item" data-page="create">
+            <span class="icon">➕</span>
+            <span class="label">Create</span>
+        </a>
+        <a href="profile.html" class="nav-item active" data-page="profile">
+            <span class="icon">👤</span>
+            <span class="label">Profile</span>
+        </a>
+    </nav>
+
+    <script src="js/api.js"></script>
+    <script src="js/profile.js"></script>
+</body>
+</html>

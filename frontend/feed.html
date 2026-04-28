@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feed - instaJOY</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Top Navigation -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-logo">instaJOY</div>
+            <div class="header-actions">
+                <button id="themeToggle" class="icon-btn" title="Toggle theme">☀️</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="container">
+        <!-- Feed Section -->
+        <div class="feed-section">
+            <!-- Post Creation -->
+            <div class="create-post-card">
+                <div class="post-header">
+                    <img id="creatorProfileImg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='20' fill='%23e0e0e0'/%3E%3C/svg%3E" alt="Your profile" class="avatar-sm">
+                    <input 
+                        type="text" 
+                        id="postCaption" 
+                        placeholder="What's on your mind?" 
+                        class="create-post-input"
+                    >
+                </div>
+                <div class="create-post-actions">
+                    <input type="file" id="postImage" accept="image/*" style="display: none;">
+                    <button id="uploadImageBtn" class="btn btn-secondary">📸 Photo</button>
+                    <button id="createPostBtn" class="btn btn-primary">Post</button>
+                </div>
+                <div id="imagePreview" class="image-preview" style="display: none;">
+                    <img id="previewImg" src="" alt="Preview">
+                    <button id="removeImageBtn" class="btn-remove">✕</button>
+                </div>
+            </div>
+
+            <!-- Posts Feed (Infinite Scroll) -->
+            <div id="postsFeed" class="posts-feed">
+                <!-- Posts will be dynamically added here -->
+            </div>
+
+            <!-- Loading Skeleton -->
+            <div id="loadingSkeleton" class="skeleton-loader">
+                <div class="skeleton-post">
+                    <div class="skeleton-header"></div>
+                    <div class="skeleton-image"></div>
+                    <div class="skeleton-text"></div>
+                </div>
+            </div>
+
+            <!-- No More Posts -->
+            <div id="noMorePosts" style="display: none;" class="no-more-posts">
+                <p>No more posts to show</p>
+            </div>
+        </div>
+
+        <!-- Sidebar (Desktop Only) -->
+        <aside class="sidebar">
+            <div class="sidebar-card">
+                <h3>Suggested For You</h3>
+                <div id="suggestedUsers"></div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Bottom Navigation (Mobile) -->
+    <nav class="bottom-nav">
+        <a href="feed.html" class="nav-item active" data-page="feed">
+            <span class="icon">🏠</span>
+            <span class="label">Home</span>
+        </a>
+        <a href="#" onclick="openSearch()" class="nav-item" data-page="search">
+            <span class="icon">🔍</span>
+            <span class="label">Search</span>
+        </a>
+        <a href="#" onclick="openCreate()" class="nav-item" data-page="create">
+            <span class="icon">➕</span>
+            <span class="label">Create</span>
+        </a>
+        <a href="profile.html" class="nav-item" data-page="profile">
+            <span class="icon">👤</span>
+            <span class="label">Profile</span>
+        </a>
+    </nav>
+
+    <!-- Modal for Comments -->
+    <div id="commentsModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Comments</h2>
+                <button class="close-modal" onclick="closeCommentsModal()">✕</button>
+            </div>
+            <div id="commentsContainer" class="comments-container">
+                <!-- Comments will be loaded here -->
+            </div>
+            <div class="comment-input-section">
+                <input 
+                    type="text" 
+                    id="commentInput" 
+                    placeholder="Add a comment..." 
+                    class="comment-input"
+                >
+                <button id="submitCommentBtn" class="btn-small">Post</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/feed.js"></script>
+</body>
+</html>
