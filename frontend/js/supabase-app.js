@@ -154,59 +154,101 @@
 
   async function handleLogin(event) {
     event.preventDefault();
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
+    const form = event.currentTarget;
+    const submitButton = form?.querySelector('button[type="submit"]');
+    submitButton?.setAttribute('disabled', 'disabled');
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      showToast(error.message, 'error');
-      return;
-    }
+    try {
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
 
-    if (data?.user) {
-      state.authMode = 'user';
-      state.user = data.user;
-      localStorage.setItem('authMode', 'user');
-      await loadCurrentUserProfile();
-      await attemptRegisterFcmToken();
-      showToast('Logged in successfully', 'success');
-      renderView('home');
-      await loadHomeFeed(true);
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        if (error.status === 429) {
+          showToast('Too many login attempts. Please wait 15 seconds and try again.', 'error');
+        } else {
+          showToast(error.message || 'Login failed. Check your credentials and try again.', 'error');
+        }
+        return;
+      }
+
+      if (data?.user) {
+        state.authMode = 'user';
+        state.user = data.user;
+        localStorage.setItem('authMode', 'user');
+        await loadCurrentUserProfile();
+        await attemptRegisterFcmToken();
+        showToast('Logged in successfully', 'success');
+        renderView('home');
+        await loadHomeFeed(true);
+      }
+    } finally {
+      submitButton?.removeAttribute('disabled');
     }
   }
 
   async function handleSignup(event) {
     event.preventDefault();
-    const username = document.getElementById('signupUsername').value.trim().toLowerCase();
-    const email = document.getElementById('signupEmail').value.trim();
-    const password = document.getElementById('signupPassword').value;
+    const form = event.currentTarget;
+    const submitButton = form?.querySelector('button[type="submit"]');
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      showToast(error.message, 'error');
-      return;
-    }
+    if (!submitButton) return;
+    submitButton.setAttribute('disabled', 'disabled');
 
-    if (data?.user) {
-      state.authMode = 'user';
-      state.user = data.user;
-      localStorage.setItem('authMode', 'user');
-      const profileInsert = await supabase.from('profiles').insert({
-        id: state.user.id,
+    try {
+      const username = document.getElementById('signupUsername').value.trim().toLowerCase();
+      const email = document.getElementById('signupEmail').value.trim();
+      const password = document.getElementById('signupPassword').value;
+
+      const pendingProfile = {
+        id: null,
         username,
         display_name: username,
-      });
+      };
 
-      if (profileInsert.error) {
-        showToast(profileInsert.error.message, 'error');
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        if (error.status === 429) {
+          showToast('Too many signup requests. Wait 15 seconds before trying again.', 'error');
+        } else {
+          showToast(error.message || 'Signup failed. Please try again.', 'error');
+        }
         return;
       }
 
+      if (!data?.user) {
+        showToast('Signup succeeded but no user object was returned. Please check your email and sign in once your account is confirmed.', 'info');
+        return;
+      }
+
+      pendingProfile.id = data.user.id;
+      localStorage.setItem('pendingProfile', JSON.stringify(pendingProfile));
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData?.session;
+      if (!session) {
+        showToast('Account created. Confirm your email before signing in.', 'success');
+        return;
+      }
+
+      state.authMode = 'user';
+      state.user = session.user;
+      localStorage.setItem('authMode', 'user');
+
+      const profileInsert = await supabase.from('profiles').insert(pendingProfile);
+      if (profileInsert.error) {
+        showToast(profileInsert.error.message || 'Profile creation failed. Please try again.', 'error');
+        return;
+      }
+
+      localStorage.removeItem('pendingProfile');
       await loadCurrentUserProfile();
       await attemptRegisterFcmToken();
       showToast('Account created. Welcome to instaJOY!', 'success');
       renderView('home');
       await loadHomeFeed(true);
+    } finally {
+      submitButton.removeAttribute('disabled');
     }
   }
 
@@ -220,9 +262,29 @@
 
   async function loadCurrentUserProfile() {
     if (!state.user) return;
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).single();
+
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).maybeSingle();
     if (!error && data) {
       state.user.profile = data;
+      return;
+    }
+
+    const pendingProfileString = localStorage.getItem('pendingProfile');
+    if (!pendingProfileString) return;
+
+    let pendingProfile;
+    try {
+      pendingProfile = JSON.parse(pendingProfileString);
+    } catch {
+      return;
+    }
+
+    if (pendingProfile?.id !== state.user.id) return;
+
+    const insertResult = await supabase.from('profiles').insert(pendingProfile);
+    if (!insertResult.error) {
+      state.user.profile = pendingProfile;
+      localStorage.removeItem('pendingProfile');
     }
   }
 
@@ -647,7 +709,10 @@
     const token = await window.INSTAJOY_FCM.getFcmToken();
     if (!token || !state.user) return;
 
-    await supabase.from('profiles').update({ fcm_token: token }).eq('id', state.user.id);
+    const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', state.user.id);
+    if (error) {
+      console.warn('FCM token registration failed', error.message);
+    }
   }
 
   function debounce(fn, delay) {
