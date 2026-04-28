@@ -119,8 +119,8 @@ async function connectDB() {
         return db;
     }
 
-    // Force connect using the provided credentials
-    const uri = process.env.MONGODB_URI || 'mongodb+srv://adyaanantofficial_db_user:3lMYfcXZ8V7JmFY7@cluster0.mnhzxzh.mongodb.net/instaJOY?retryWrites=true&w=majority&appName=Cluster0';
+    // Securely read the connection string from environment variables
+    const uri = process.env.MONGODB_URI;
     if (!uri) {
         throw new Error('MONGODB_URI is required');
     }

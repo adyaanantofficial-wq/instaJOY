@@ -198,8 +198,8 @@
         localStorage.removeItem('instajoy_access_token');
         localStorage.removeItem('instajoy_refresh_token');
         localStorage.removeItem('instajoy_user');
-        // Redirect directly to home.html for guest
-        window.location.href = 'home.html';
+        // Reload the main page. The init() function will detect guest mode and show the home view.
+        window.location.href = 'index.html';
     }
 
     function bindStaticEvents() {
