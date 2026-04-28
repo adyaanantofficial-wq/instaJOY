@@ -77,18 +77,22 @@
 
         try {
             if (state.session.token) {
+                if (dom.landingPage) dom.landingPage.hidden = true;
                 await hydrateSession();
                 await enterAuthedApp(true);
             } else if (isGuest) {
                 // Guest mode: skip auth, go directly to home feed
+                if (dom.landingPage) dom.landingPage.hidden = true;
                 state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
                 await enterAuthedApp(true);
             } else {
-                showAuthView();
+                if (dom.landingPage) dom.landingPage.hidden = false;
+                dom.appShell.hidden = true;
             }
         } catch (error) {
             clearSession();
-            showAuthView();
+            if (dom.landingPage) dom.landingPage.hidden = false;
+            dom.appShell.hidden = true;
             showToast(error.message || 'Session expired. Please log in again.', 'error');
         } finally {
             window.setTimeout(() => {
@@ -104,6 +108,7 @@
     }
 
     function cacheDom() {
+        dom.landingPage = document.getElementById('landingPage');
         dom.splashScreen = document.getElementById('splashScreen') || { classList: { add: () => {} } };
         dom.appShell = document.getElementById('appShell');
         dom.authView = document.getElementById('authView');
@@ -184,14 +189,6 @@
         return true;
     }
     
-    function handleLogin() {
-        // Clear guest mode flag
-        localStorage.removeItem('guest');
-        // Safely reload the current page without changing the path
-        window.location.hash = '';
-        window.location.reload();
-    }
-    
     function handleGuest() {
         // Set guest mode flag
         localStorage.setItem('guest', 'true');
@@ -206,7 +203,13 @@
 
     function bindStaticEvents() {
         // Landing page buttons
-        document.getElementById('loginBtn')?.addEventListener('click', handleLogin);
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            loginBtn.addEventListener('click', () => {
+                if (dom.landingPage) dom.landingPage.hidden = true;
+                showAuthView();
+            });
+        }
         document.getElementById('guestBtn')?.addEventListener('click', handleGuest);
         
         document.body.addEventListener('click', handleBodyClick);
@@ -304,6 +307,7 @@
 
     function showAuthView() {
         state.activeView = 'auth';
+        if (dom.landingPage) dom.landingPage.hidden = true;
         dom.appShell.hidden = false;
         dom.bottomNav.hidden = true;
         dom.authView.hidden = false;
@@ -1595,7 +1599,13 @@
         state.profile = { username: null, data: null, posts: [], pendingImageData: null };
         resetCreateForm();
         renderAuthView();
-        showAuthView();
+        
+        if (dom.landingPage) {
+            dom.landingPage.hidden = false;
+            dom.appShell.hidden = true;
+        } else {
+            showAuthView();
+        }
         window.location.hash = '';
     }
 
