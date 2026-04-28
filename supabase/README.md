@@ -17,6 +17,7 @@ This folder contains the Supabase PostgreSQL schema and Edge Function samples fo
 ## Deployment
 1. Create a Supabase project.
 2. Run `supabase db reset` and apply `supabase/schema.sql`.
+   - If you have a direct PostgreSQL connection, you can also run `npm run apply:supabase-schema` after setting `SUPABASE_DB_URL` or `DATABASE_URL` in `.env.local`, `.env`, or your shell.
 3. Create Storage buckets:
    - `post-images`
    - `reel-videos`
