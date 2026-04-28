@@ -1703,22 +1703,30 @@
       const text = payload.content || payload.caption || '';
       return [
         { user_id: payload.user_id, type: 'text', category: payload.category, content: text, caption: text },
+        { type: 'text', category: payload.category, content: text, caption: text },
         { user_id: payload.user_id, type: 'text', content: text, caption: text },
+        { type: 'text', content: text, caption: text },
         { user_id: payload.user_id, content: text, caption: text },
+        { content: text, caption: text },
         { user_id: payload.user_id, caption: text },
+        { caption: text },
       ];
     }
 
     if (payload.type === 'image') {
       return [
         { user_id: payload.user_id, type: 'image', caption: payload.caption, image_url: payload.image_url },
+        { type: 'image', caption: payload.caption, image_url: payload.image_url },
         { user_id: payload.user_id, caption: payload.caption, image_url: payload.image_url },
+        { caption: payload.caption, image_url: payload.image_url },
       ];
     }
 
     return [
       { user_id: payload.user_id, type: 'reel', caption: payload.caption, media_url: payload.media_url },
+      { type: 'reel', caption: payload.caption, media_url: payload.media_url },
       { user_id: payload.user_id, caption: payload.caption, media_url: payload.media_url },
+      { caption: payload.caption, media_url: payload.media_url },
     ];
   }
 
@@ -1749,6 +1757,10 @@
       return true;
     }
 
+    if (isPostOwnershipCompatibilityError(error, variant)) {
+      return true;
+    }
+
     if (isMissingPostColumnError(error, 'media_url')) {
       state.capabilities.reelsAvailable = false;
       return postType === 'reel' && Object.prototype.hasOwnProperty.call(variant, 'type');
@@ -1756,6 +1768,37 @@
 
     if (isMissingPostColumnError(error, 'image_url')) {
       return postType === 'image' && Object.prototype.hasOwnProperty.call(variant, 'type');
+    }
+
+    return false;
+  }
+
+  function isPostOwnershipCompatibilityError(error, variant) {
+    const message = String(error?.message || '').toLowerCase();
+    const hasExplicitUserId = Object.prototype.hasOwnProperty.call(variant, 'user_id');
+
+    if (hasExplicitUserId) {
+      if (isMissingProfilesTableError(error)) {
+        return true;
+      }
+
+      if ((message.includes('foreign key') || message.includes('violates foreign key')) && (message.includes('profiles') || message.includes('user_id'))) {
+        return true;
+      }
+
+      if ((message.includes('row-level security') || message.includes('violates row-level security')) && message.includes('user_id')) {
+        return true;
+      }
+    }
+
+    if (!hasExplicitUserId) {
+      if ((message.includes('null value') || message.includes('not-null')) && message.includes('user_id')) {
+        return true;
+      }
+
+      if ((message.includes('row-level security') || message.includes('violates row-level security')) && message.includes('user_id')) {
+        return true;
+      }
     }
 
     return false;
