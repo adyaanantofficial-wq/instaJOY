@@ -167,7 +167,7 @@ const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
 let server = null;
 
 async function startServer() {
-    requireEnv('MONGODB_URI');
+    // requireEnv('MONGODB_URI'); // Disabled to allow hardcoded fallback in database.js
     requireEnv('JWT_SECRET');
     requireEnv('JWT_REFRESH_SECRET');
 

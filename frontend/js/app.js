@@ -13,6 +13,8 @@
 
     const state = {
         authMode: 'login',
+        // `authState` tracks runtime mode: 'guest' or 'user' (stored in localStorage as `authMode`)
+        authState: null,
         activeView: 'auth',
         session: {
             token: localStorage.getItem(TOKEN_KEY) || '',
@@ -69,21 +71,33 @@
 
     async function init() {
         cacheDom();
-        const isGuest = localStorage.getItem('guest') === 'true';
+        // Initialize auth mode: prefer explicit `authMode`, fall back to legacy `guest` flag
+        const storedMode = localStorage.getItem('authMode');
+        const legacyGuest = localStorage.getItem('guest') === 'true';
+        if (storedMode === 'guest' || legacyGuest) {
+            state.authState = 'guest';
+        } else if (storedMode === 'user') {
+            state.authState = 'user';
+        } else if (state.session.token) {
+            state.authState = 'user';
+        } else {
+            state.authState = null; // Default to null to show landing page
+        }
         
         renderAuthView();
         bindStaticEvents();
         setupObservers();
 
         try {
-            if (state.session.token) {
+            if (state.session.token && state.authState === 'user') {
                 if (dom.landingPage) dom.landingPage.hidden = true;
                 await hydrateSession();
                 await enterAuthedApp(true);
-            } else if (isGuest) {
+            } else if (state.authState === 'guest') {
                 // Guest mode: skip auth, go directly to home feed
                 if (dom.landingPage) dom.landingPage.hidden = true;
                 state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
+                persistSession();
                 await enterAuthedApp(true);
             } else {
                 if (dom.landingPage) dom.landingPage.hidden = false;
@@ -101,7 +115,7 @@
         }
 
         window.addEventListener('hashchange', async () => {
-            if (state.session.token || isGuest) {
+            if (state.session.token || isGuestMode()) {
                 await resolveHashRoute();
             }
         });
@@ -178,7 +192,7 @@
     // ============================================
     
     function isGuestMode() {
-        return localStorage.getItem('guest') === 'true';
+        return state.authState === 'guest' || localStorage.getItem('guest') === 'true';
     }
 
     function requireLogin(actionName) {
@@ -190,14 +204,28 @@
     }
     
     function handleGuest() {
-        // Set guest mode flag
-        localStorage.setItem('guest', 'true');
-        // Clear any existing token
-        localStorage.removeItem('instajoy_access_token');
-        localStorage.removeItem('instajoy_refresh_token');
-        localStorage.removeItem('instajoy_user');
-        // Redirect to dedicated guest home page
-        window.location.href = 'home.html';
+        // Switch to guest mode and clear any existing authenticated session
+        setAuthMode('guest');
+        clearSession();
+        state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
+        persistSession();
+        
+        if (dom.landingPage) dom.landingPage.hidden = true;
+        enterAuthedApp(true);
+    }
+
+    function setAuthMode(mode) {
+        state.authState = mode === 'user' ? 'user' : 'guest';
+        try {
+            localStorage.setItem('authMode', state.authState);
+            if (state.authState === 'guest') {
+                localStorage.setItem('guest', 'true');
+            } else {
+                localStorage.removeItem('guest');
+            }
+        } catch (e) {
+            // ignore storage errors
+        }
     }
 
     function bindStaticEvents() {
@@ -296,7 +324,10 @@
     async function hydrateSession() {
         const response = await apiRequest('/auth/me');
         state.session.user = response.user;
+        // ensure we are in authenticated mode and persist
+        setAuthMode('user');
         persistSession();
+        return response;
     }
 
     async function enterAuthedApp(useHash) {
@@ -308,6 +339,15 @@
         if (guestBadge && isGuestMode()) {
             guestBadge.hidden = false;
         }
+
+        // Disable or hide write actions for guest users
+        if (dom.openCreateButton) {
+            dom.openCreateButton.hidden = isGuestMode();
+        }
+        // Hide messages nav if guest
+        document.querySelectorAll('.nav-button[data-view="messages"]').forEach((btn) => {
+            btn.hidden = isGuestMode();
+        });
         
         if (useHash) {
             const handled = await resolveHashRoute();
@@ -321,6 +361,9 @@
 
     function showAuthView() {
         state.activeView = 'auth';
+        state.authState = null;
+        localStorage.removeItem('authMode');
+        localStorage.removeItem('guest');
         if (dom.landingPage) dom.landingPage.hidden = true;
         if (dom.appShell) dom.appShell.hidden = false;
         if (dom.bottomNav) dom.bottomNav.hidden = true;
@@ -609,25 +652,27 @@
         }
 
         try {
+            const query = new URLSearchParams({ limit: '8' });
+            if (state.home.cursor) {
+                query.set('cursor', state.home.cursor);
+            }
+
+            // Pass auth: false so guests don't send tokens but still fetch the public feed
+            const response = await apiRequest(`/posts/feed?${query.toString()}`, { auth: false });
+            state.home.items = state.home.items.concat(response.posts || []);
+            state.home.cursor = response.nextCursor || null;
+            state.home.hasMore = Boolean(response.hasMore);
+            renderHomeFeed();
+        } catch (error) {
             if (isGuestMode()) {
-                // Load demo data for guest mode
+                // Fallback to demo data if public API fails for guests
                 const demoData = window.INSTAJOY_DEMO_DATA || { posts: [] };
                 state.home.items = demoData.posts || [];
                 state.home.hasMore = false;
+                renderHomeFeed();
             } else {
-                const query = new URLSearchParams({ limit: '8' });
-                if (state.home.cursor) {
-                    query.set('cursor', state.home.cursor);
-                }
-
-                const response = await apiRequest(`/posts/feed?${query.toString()}`);
-                state.home.items = state.home.items.concat(response.posts || []);
-                state.home.cursor = response.nextCursor || null;
-                state.home.hasMore = Boolean(response.hasMore);
+                showToast(error.message || 'Failed to load feed', 'error');
             }
-            renderHomeFeed();
-        } catch (error) {
-            showToast(error.message || 'Failed to load feed', 'error');
         } finally {
             state.home.loading = false;
             if (dom.homeLoadMore) {
@@ -683,24 +728,24 @@
         }
 
         try {
-            if (isGuestMode()) {
-                // No reels data for guests
-                state.reels.items = [];
-                state.reels.hasMore = false;
-            } else {
-                const query = new URLSearchParams({ limit: '4' });
-                if (state.reels.cursor) {
-                    query.set('cursor', state.reels.cursor);
-                }
-
-                const response = await apiRequest(`/reels/feed?${query.toString()}`);
-                state.reels.items = state.reels.items.concat(response.reels || []);
-                state.reels.cursor = response.nextCursor || null;
-                state.reels.hasMore = Boolean(response.hasMore);
+            const query = new URLSearchParams({ limit: '4' });
+            if (state.reels.cursor) {
+                query.set('cursor', state.reels.cursor);
             }
+
+            const response = await apiRequest(`/reels/feed?${query.toString()}`, { auth: false });
+            state.reels.items = state.reels.items.concat(response.reels || []);
+            state.reels.cursor = response.nextCursor || null;
+            state.reels.hasMore = Boolean(response.hasMore);
             renderReels();
         } catch (error) {
-            showToast(error.message || 'Failed to load reels', 'error');
+            if (isGuestMode()) {
+                state.reels.items = [];
+                state.reels.hasMore = false;
+                renderReels();
+            } else {
+                showToast(error.message || 'Failed to load reels', 'error');
+            }
         } finally {
             state.reels.loading = false;
             if (dom.reelsLoadMore) {
@@ -1664,15 +1709,16 @@
         state.notifications = [];
         state.profile = { username: null, data: null, posts: [], pendingImageData: null };
         resetCreateForm();
-        renderAuthView();
         
-        if (dom.landingPage) {
-            dom.landingPage.hidden = false;
-            dom.appShell.hidden = true;
-        } else {
-            showAuthView();
-        }
+        // Reset auth mode and return to landing page
+        localStorage.removeItem('authMode');
+        localStorage.removeItem('guest');
+        state.authState = null;
+        
+        if (dom.landingPage) dom.landingPage.hidden = false;
+        if (dom.appShell) dom.appShell.hidden = true;
         window.location.hash = '';
+        showToast('Logged out successfully.', 'success');
     }
 
     async function copyShareLink(link, message) {
@@ -1839,7 +1885,8 @@
             headers['Content-Type'] = 'application/json';
         }
 
-        if (settings.auth !== false && state.session.token) {
+        // Do not attach auth header in guest mode. Only attach if explicitly allowed and token exists.
+        if (!isGuestMode() && settings.auth !== false && state.session.token) {
             headers.Authorization = `Bearer ${state.session.token}`;
         }
 
@@ -1896,6 +1943,8 @@
         state.session.token = response.token;
         state.session.refreshToken = response.refreshToken;
         state.session.user = response.user;
+        // mark authenticated mode and persist
+        setAuthMode('user');
         persistSession();
     }
 
@@ -1905,6 +1954,10 @@
         if (state.session.user) {
             localStorage.setItem(USER_KEY, JSON.stringify(state.session.user));
         }
+        // persist authMode as well
+        try {
+            localStorage.setItem('authMode', state.authState || 'guest');
+        } catch (e) {}
     }
 
     function clearSession() {
@@ -1916,6 +1969,8 @@
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
+        // switch to guest mode after clearing authenticated session
+        setAuthMode('guest');
     }
 
     function parseStoredUser() {
