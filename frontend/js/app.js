@@ -187,8 +187,9 @@
     function handleLogin() {
         // Clear guest mode flag
         localStorage.removeItem('guest');
-        // Redirect to auth view
-        window.location.href = 'index.html?view=auth';
+        // Safely reload the current page without changing the path
+        window.location.hash = '';
+        window.location.reload();
     }
     
     function handleGuest() {
@@ -198,8 +199,9 @@
         localStorage.removeItem('instajoy_access_token');
         localStorage.removeItem('instajoy_refresh_token');
         localStorage.removeItem('instajoy_user');
-        // Reload the main page. The init() function will detect guest mode and show the home view.
-        window.location.href = 'index.html';
+        // Safely reload the current page to initialize guest mode
+        window.location.hash = '';
+        window.location.reload();
     }
 
     function bindStaticEvents() {
