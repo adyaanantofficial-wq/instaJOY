@@ -125,13 +125,17 @@ async function connectDB() {
 
     async function attemptConnect(uri) {
         client = new MongoClient(uri, {
-            connectTimeoutMS: 10000,
-            serverSelectionTimeoutMS: 10000,
+            connectTimeoutMS: 15000,
+            serverSelectionTimeoutMS: 15000,
+            socketTimeoutMS: 15000,
+            family: 4,
             serverApi: {
                 version: ServerApiVersion.v1,
-                strict: true,
+                strict: false,
                 deprecationErrors: true,
             },
+            tls: true,
+            retryWrites: true,
         });
 
         await client.connect();

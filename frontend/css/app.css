@@ -106,6 +106,74 @@ video {
     color: var(--subtext);
 }
 
+/* Landing Page */
+.landing-page {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background:
+        linear-gradient(135deg, rgba(255, 230, 205, 0.96), rgba(255, 246, 237, 0.98)),
+        radial-gradient(circle at top, rgba(244, 106, 59, 0.12), transparent 36%);
+}
+
+.landing-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    text-align: center;
+    max-width: 420px;
+    padding: 2rem;
+    background: var(--surface-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+}
+
+.landing-logo {
+    width: 120px;
+    height: 120px;
+    border-radius: 32px;
+    box-shadow: 0 12px 32px rgba(244, 106, 59, 0.2);
+}
+
+.landing-content h1 {
+    margin: 0;
+    font-size: 2rem;
+    letter-spacing: 0.03em;
+    color: var(--text);
+}
+
+.landing-content > p:nth-of-type(1) {
+    margin: 0;
+    color: var(--subtext);
+    font-size: 1.05rem;
+}
+
+.landing-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+.landing-buttons button {
+    width: 100%;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.landing-note {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--subtext);
+    line-height: 1.4;
+}
+
 .app-shell {
     min-height: 100vh;
 }

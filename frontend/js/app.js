@@ -69,6 +69,8 @@
 
     async function init() {
         cacheDom();
+        const isGuest = localStorage.getItem('guest') === 'true';
+        
         renderAuthView();
         bindStaticEvents();
         setupObservers();
@@ -76,6 +78,10 @@
         try {
             if (state.session.token) {
                 await hydrateSession();
+                await enterAuthedApp(true);
+            } else if (isGuest) {
+                // Guest mode: skip auth, go directly to home feed
+                state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
                 await enterAuthedApp(true);
             } else {
                 showAuthView();
@@ -91,14 +97,14 @@
         }
 
         window.addEventListener('hashchange', async () => {
-            if (state.session.token) {
+            if (state.session.token || isGuest) {
                 await resolveHashRoute();
             }
         });
     }
 
     function cacheDom() {
-        dom.splashScreen = document.getElementById('splashScreen');
+        dom.splashScreen = document.getElementById('splashScreen') || { classList: { add: () => {} } };
         dom.appShell = document.getElementById('appShell');
         dom.authView = document.getElementById('authView');
         dom.bottomNav = document.getElementById('bottomNav');
@@ -162,7 +168,45 @@
         dom.toastHost = document.getElementById('toastHost');
     }
 
+    // ============================================
+    // GUEST MODE HELPER & LANDING PAGE HANDLERS
+    // ============================================
+    
+    function isGuestMode() {
+        return localStorage.getItem('guest') === 'true';
+    }
+
+    function requireLogin(actionName) {
+        if (isGuestMode()) {
+            showToast(`Login required for ${actionName}. Guest mode allows viewing only.`, 'info');
+            return false;
+        }
+        return true;
+    }
+    
+    function handleLogin() {
+        // Clear guest mode flag
+        localStorage.removeItem('guest');
+        // Redirect to auth view
+        window.location.href = 'index.html?view=auth';
+    }
+    
+    function handleGuest() {
+        // Set guest mode flag
+        localStorage.setItem('guest', 'true');
+        // Clear any existing token
+        localStorage.removeItem('instajoy_access_token');
+        localStorage.removeItem('instajoy_refresh_token');
+        localStorage.removeItem('instajoy_user');
+        // Reload to trigger guest mode initialization
+        window.location.href = 'index.html?mode=guest';
+    }
+
     function bindStaticEvents() {
+        // Landing page buttons
+        document.getElementById('loginBtn')?.addEventListener('click', handleLogin);
+        document.getElementById('guestBtn')?.addEventListener('click', handleGuest);
+        
         document.body.addEventListener('click', handleBodyClick);
 
         dom.topbarAction.addEventListener('click', handleTopbarAction);
@@ -740,6 +784,8 @@
     async function handleMessageSubmit(event) {
         event.preventDefault();
 
+        if (!requireLogin('messaging')) return;
+
         if (!state.messages.activeUser) {
             return;
         }
@@ -973,6 +1019,7 @@
     }
 
     function openCreateModal() {
+        if (!requireLogin('posting')) return;
         resetCreateForm();
         openModal(dom.createModal);
     }
@@ -1153,6 +1200,8 @@
     async function handleCommentSubmit(event) {
         event.preventDefault();
 
+        if (!requireLogin('commenting')) return;
+
         const text = dom.commentInput.value.trim();
         if (!text || !state.comments.targetType || !state.comments.targetId) {
             return;
@@ -1311,6 +1360,8 @@
     }
 
     async function togglePostLike(postId) {
+        if (!requireLogin('liking posts')) return;
+
         const targets = [state.home.items.find((item) => item.id === postId), state.profile.posts.find((item) => item.id === postId)].filter(Boolean);
         if (!targets.length) {
             return;
@@ -1341,6 +1392,8 @@
     }
 
     async function toggleReelLike(reelId) {
+        if (!requireLogin('liking reels')) return;
+
         const reel = state.reels.items.find((item) => item.id === reelId);
         if (!reel) {
             return;

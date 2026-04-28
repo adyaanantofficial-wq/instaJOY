@@ -1,7 +1,7 @@
 window.INSTAJOY_CONFIG = Object.freeze({
     API_BASE_URL:
         window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? 'http://127.0.0.1:3000/api'
+            ? `http://${window.location.hostname}:5000/api`
             : 'https://your-render-service.onrender.com/api',
     DEFAULT_AVATAR: 'ilogo.png',
     TOKEN_KEY: 'instajoy_access_token',

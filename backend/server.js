@@ -86,6 +86,7 @@ app.set('trust proxy', 1);
 app.use(
     helmet({
         crossOriginResourcePolicy: false,
+        contentSecurityPolicy: false,
     })
 );
 
@@ -109,6 +110,17 @@ app.use(
 
 app.use(express.json({ limit: '3mb' }));
 app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+
+// Serve static root files (index.html, ilogo.png, etc)
+app.use(express.static(path.join(__dirname, '..')));
+
+// Serve frontend subdirectory
+app.use('/frontend', express.static(path.join(__dirname, '..', 'frontend')));
+
+// Serve index.html for root  
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
 
 const generalLimiter = rateLimit({
     windowMs: Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
