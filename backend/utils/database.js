@@ -3,6 +3,43 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 let client = null;
 let db = null;
 
+function getMongoHostHint(uri) {
+    try {
+        const parsed = new URL(uri);
+        return parsed.host || 'the configured MongoDB host';
+    } catch (_) {
+        return 'the configured MongoDB host';
+    }
+}
+
+function rewriteMongoConnectionError(error, uri) {
+    const message = String(error.message || '');
+    const hostHint = getMongoHostHint(uri);
+    const isSrvUri = String(uri || '').startsWith('mongodb+srv://');
+
+    if (
+        message.includes('querySrv') ||
+        message.includes('ENOTFOUND') ||
+        message.includes('EAI_AGAIN')
+    ) {
+        error.message = isSrvUri
+            ? `Could not resolve the MongoDB Atlas SRV host for ${hostHint}. Check DNS/network access or switch MONGODB_URI to Atlas's standard connection string instead of the SRV form.`
+            : `Could not resolve ${hostHint}. Check the MONGODB_URI host and network/DNS access from the deployment environment.`;
+        return;
+    }
+
+    if (
+        message.includes('tlsv1 alert internal error') ||
+        message.includes('SSL alert number 80') ||
+        error.code === 'ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR'
+    ) {
+        error.message =
+            `MongoDB TLS handshake failed while connecting to ${hostHint}. ` +
+            `Verify the Atlas cluster is available, Atlas Network Access allows this deployment, ` +
+            `and if you are using an SRV URI try Atlas's standard connection string in MONGODB_URI.`;
+    }
+}
+
 async function createIndexes(database) {
     await Promise.all([
         database.collection('users').createIndexes([
@@ -55,6 +92,8 @@ async function connectDB() {
     }
 
     client = new MongoClient(process.env.MONGODB_URI, {
+        connectTimeoutMS: 10000,
+        serverSelectionTimeoutMS: 10000,
         serverApi: {
             version: ServerApiVersion.v1,
             strict: true,
@@ -74,10 +113,7 @@ async function connectDB() {
             db = null;
         }
 
-        if (String(error.message || '').includes('querySrv')) {
-            error.message =
-                'Could not resolve the MongoDB Atlas SRV host. Check the MONGODB_URI host, local DNS/network access, or use a working Atlas connection string.';
-        }
+        rewriteMongoConnectionError(error, process.env.MONGODB_URI);
 
         throw error;
     }

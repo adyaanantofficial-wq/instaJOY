@@ -39,12 +39,30 @@ function requireEnv(name) {
     }
 }
 
+function normalizeOrigin(value) {
+    const normalized = String(value || '').trim();
+
+    if (!normalized) {
+        return '';
+    }
+
+    try {
+        if (/^https?:\/\//i.test(normalized)) {
+            return new URL(normalized).origin;
+        }
+    } catch (_) {
+        return normalized.replace(/\/+$/, '');
+    }
+
+    return normalized.replace(/\/+$/, '');
+}
+
 function getAllowedOrigins() {
     const configuredOrigins = [
         process.env.FRONTEND_URL,
         ...(process.env.FRONTEND_URLS || '').split(','),
     ]
-        .map((value) => String(value || '').trim())
+        .map(normalizeOrigin)
         .filter(Boolean);
 
     if (process.env.NODE_ENV !== 'production') {
@@ -175,6 +193,8 @@ if (require.main === module) {
 
 module.exports = {
     app,
+    getAllowedOrigins,
+    normalizeOrigin,
     shutdown,
     startServer,
 };

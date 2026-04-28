@@ -48,8 +48,10 @@ You can also deploy from the included `render.yaml` blueprint if you prefer infr
 - `JWT_REFRESH_SECRET=...`
 - `JWT_EXPIRES_IN=2h`
 - `JWT_REFRESH_EXPIRES_IN=7d`
-- `FRONTEND_URL=https://your-github-username.github.io/instaJOY`
-- `FRONTEND_URLS=https://your-github-username.github.io/instaJOY`
+- `FRONTEND_URL=https://your-github-username.github.io`
+- `FRONTEND_URLS=https://your-github-username.github.io`
+
+Important: `FRONTEND_URL` and `FRONTEND_URLS` must contain origins only, not full GitHub Pages paths. Use `https://your-github-username.github.io`, not `https://your-github-username.github.io/instaJOY`.
 - `RATE_LIMIT_WINDOW_MS=900000`
 - `RATE_LIMIT_MAX_REQUESTS=150`
 
@@ -59,6 +61,8 @@ The repo includes:
 
 - `.nvmrc` set to `22.22.0`
 - `package.json` engines: `>=22.22.0 <25`
+
+If Render still fails with `tlsv1 alert internal error` while connecting to MongoDB Atlas, the failure is happening during the database TLS handshake. In Atlas, copy the standard connection string from the Drivers screen and try that in `MONGODB_URI` instead of the `mongodb+srv://` form, then confirm Atlas Network Access allows the Render deployment.
 
 That gives Render a deterministic LTS target while remaining compatible with modern local Node installs.
 
