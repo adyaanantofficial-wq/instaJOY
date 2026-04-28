@@ -19,6 +19,9 @@
     user: null,
     profile: null,
     profileUsername: null,
+    capabilities: {
+      profilesTable: 'unknown',
+    },
     posts: [],
     reels: [],
     likedPostIds: new Set(),
@@ -134,6 +137,8 @@
       const profileResult = await ensureCurrentUserProfile();
       if (!profileResult.ok) {
         showToast(profileResult.message, 'error');
+      } else if (profileResult.warning) {
+        showToast(profileResult.warning, 'info');
       }
       await attemptRegisterFcmToken();
       clearLegacyGuestFlag();
@@ -270,7 +275,12 @@
       state.authMode = 'user';
       sessionStorage.setItem(AUTH_STORAGE_KEY, 'user');
       clearLegacyGuestFlag();
-      await ensureCurrentUserProfile();
+      const profileResult = await ensureCurrentUserProfile();
+      if (!profileResult.ok) {
+        showToast(profileResult.message, 'error');
+      } else if (profileResult.warning) {
+        showToast(profileResult.warning, 'info');
+      }
       await attemptRegisterFcmToken();
       showToast('Logged in successfully.', 'success');
       await enterInteractiveView('home');
@@ -353,6 +363,8 @@
       const profileResult = await ensureProfileRecord(pendingProfile);
       if (!profileResult.ok) {
         showToast(profileResult.message, 'error');
+      } else if (profileResult.warning) {
+        showToast(profileResult.warning, 'info');
       } else {
         showToast('Account created. Welcome to instaJOY!', 'success');
       }
@@ -525,11 +537,24 @@
 
     const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).maybeSingle();
     if (data) {
+      state.capabilities.profilesTable = 'available';
       state.profile = data;
       state.user.profile = data;
       state.profileUsername = data.username;
       sessionStorage.removeItem(PENDING_PROFILE_KEY);
       return { ok: true };
+    }
+
+    if (isMissingProfilesTableError(error)) {
+      state.capabilities.profilesTable = 'missing';
+      const fallbackProfile = buildProfileDraft(state.user, readPendingProfile() || {});
+      state.profile = fallbackProfile;
+      state.user.profile = fallbackProfile;
+      state.profileUsername = fallbackProfile.username;
+      return {
+        ok: true,
+        degraded: true,
+      };
     }
 
     if (error && !isMissingProfilesTableError(error)) {
@@ -563,9 +588,21 @@
       .single();
 
     if (error) {
+      if (isMissingProfilesTableError(error)) {
+        state.capabilities.profilesTable = 'missing';
+        state.profile = payload;
+        state.user.profile = payload;
+        state.profileUsername = payload.username;
+        return {
+          ok: true,
+          profile: payload,
+          degraded: true,
+        };
+      }
       return { ok: false, message: humanizeProfileError(error, payload.username) };
     }
 
+    state.capabilities.profilesTable = 'available';
     return { ok: true, profile: data };
   }
 
@@ -603,8 +640,13 @@
   async function ensureUsernameAvailable(username) {
     const { data, error } = await supabase.from('profiles').select('id').eq('username', username).limit(1);
     if (error) {
+      if (isMissingProfilesTableError(error)) {
+        state.capabilities.profilesTable = 'missing';
+        return true;
+      }
       throw error;
     }
+    state.capabilities.profilesTable = 'available';
     return !data?.length;
   }
 
@@ -626,11 +668,7 @@
 
     const rangeStart = state.posts.length;
     const rangeEnd = rangeStart + 9;
-    const { data, error } = await supabase
-      .from('posts')
-      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)')
-      .order('created_at', { ascending: false })
-      .range(rangeStart, rangeEnd);
+    const { data, error } = await selectPostsWithAuthors(rangeStart, rangeEnd);
 
     state.postLoading = false;
     if (error) {
@@ -680,7 +718,7 @@
   }
 
   function renderPostCard(post) {
-    const author = post.profiles || {};
+    const author = deriveAuthor(post);
     const createdAt = new Date(post.created_at).toLocaleString();
     const liked = state.likedPostIds.has(post.id);
     const likeDisabled = state.authMode !== 'user';
@@ -750,11 +788,7 @@
   async function loadComments(postId) {
     dom.commentsList.innerHTML = '<div class="empty-state">Loading comments...</div>';
 
-    const { data, error } = await supabase
-      .from('comments')
-      .select('id, body, created_at, profiles(username, avatar_url)')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: true });
+    const { data, error } = await selectCommentsWithAuthors(postId);
 
     if (error) {
       dom.commentsList.innerHTML = `<div class="empty-state">${escapeHtml(humanizeError(error))}</div>`;
@@ -767,7 +801,7 @@
     }
 
     dom.commentsList.innerHTML = data.map((comment) => {
-      const username = comment.profiles?.username || 'anonymous';
+      const username = deriveAuthor(comment).username || 'anonymous';
       return `
         <article class="card compact-card">
           <div class="comment-head">
@@ -825,21 +859,27 @@
     dom.searchStatus.textContent = 'Searching...';
     const [usersResult, postsResult] = await Promise.all([
       supabase.from('profiles').select('id, username, avatar_url').ilike('username', `%${query}%`).limit(15),
-      supabase.from('posts').select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)').or(`caption.ilike.%${query}%,content.ilike.%${query}%`).order('created_at', { ascending: false }).limit(15),
+      selectSearchedPosts(query),
     ]);
 
-    if (usersResult.error || postsResult.error) {
-      showToast(humanizeError(usersResult.error || postsResult.error), 'error');
+    const userSearchError = usersResult.error && !isMissingProfilesTableError(usersResult.error) ? usersResult.error : null;
+    if (usersResult.error && isMissingProfilesTableError(usersResult.error)) {
+      state.capabilities.profilesTable = 'missing';
+    }
+
+    if (userSearchError || postsResult.error) {
+      showToast(humanizeError(userSearchError || postsResult.error), 'error');
       dom.searchStatus.textContent = 'Search is unavailable right now.';
       return;
     }
 
     const users = usersResult.data || [];
     const posts = postsResult.data || [];
-    dom.searchStatus.textContent = `Found ${users.length} users and ${posts.length} posts.`;
+    const userSummaryText = state.capabilities.profilesTable === 'missing' ? 'user profiles unavailable' : `${users.length} users`;
+    dom.searchStatus.textContent = `Found ${userSummaryText} and ${posts.length} posts.`;
     dom.userSearchResults.innerHTML = users.length
       ? users.map((user) => `<article class="card compact-card"><button class="ghost-button" data-action="view-profile" data-username="${escapeHtml(user.username)}">${escapeHtml(user.username)}</button></article>`).join('')
-      : '<div class="empty-state">No matching users yet.</div>';
+      : `<div class="empty-state">${state.capabilities.profilesTable === 'missing' ? 'Profile search is unavailable until the profiles table exists.' : 'No matching users yet.'}</div>`;
     dom.postSearchResults.innerHTML = posts.length
       ? posts.map((post) => renderPostCard(post)).join('')
       : '<div class="empty-state">No matching posts yet.</div>';
@@ -859,12 +899,7 @@
       dom.reelsFeed.innerHTML = '<div class="empty-state">Loading reels...</div>';
     }
 
-    const { data, error } = await supabase
-      .from('posts')
-      .select('id, caption, media_url, created_at, profiles(username, avatar_url)')
-      .eq('type', 'reel')
-      .order('created_at', { ascending: false })
-      .limit(12);
+    const { data, error } = await selectReelsWithAuthors();
 
     state.reelLoading = false;
     if (error) {
@@ -882,7 +917,7 @@
   }
 
   function renderReelCard(reel) {
-    const author = reel.profiles || {};
+    const author = deriveAuthor(reel);
     return `
       <article class="card reel-card">
         <header class="post-header">
@@ -969,6 +1004,16 @@
       return;
     }
 
+    if (state.capabilities.profilesTable === 'missing') {
+      dom.profileSummary.innerHTML = `
+        <div class="empty-state">
+          Public profiles are unavailable right now because the profiles table is missing. Feed browsing and basic posting can still continue where the database allows it.
+        </div>
+      `;
+      dom.profileGrid.innerHTML = '';
+      return;
+    }
+
     const { data: users, error: userError } = await supabase
       .from('profiles')
       .select('*')
@@ -984,7 +1029,7 @@
     const profile = users[0];
     state.profileUsername = profile.username;
     const [postsResult, followersResult, followingResult] = await Promise.all([
-      supabase.from('posts').select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(30),
+      selectPostsByUser(profile.id),
       supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', profile.id),
       supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', profile.id),
     ]);
@@ -1269,6 +1314,10 @@
       return;
     }
 
+    if (state.capabilities.profilesTable === 'missing') {
+      return;
+    }
+
     try {
       const permission = await window.INSTAJOY_FCM.requestPermission();
       if (!permission) {
@@ -1296,6 +1345,150 @@
 
     showToast(`Login required for ${actionName}. Guest mode is view-only.`, 'info');
     return false;
+  }
+
+  async function selectPostsWithAuthors(rangeStart, rangeEnd) {
+    const joinedResult = await supabase
+      .from('posts')
+      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)')
+      .order('created_at', { ascending: false })
+      .range(rangeStart, rangeEnd);
+
+    if (!joinedResult.error) {
+      state.capabilities.profilesTable = 'available';
+      return joinedResult;
+    }
+
+    if (!isMissingProfilesTableError(joinedResult.error)) {
+      return joinedResult;
+    }
+
+    state.capabilities.profilesTable = 'missing';
+    return supabase
+      .from('posts')
+      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
+      .order('created_at', { ascending: false })
+      .range(rangeStart, rangeEnd);
+  }
+
+  async function selectSearchedPosts(query) {
+    const joinedResult = await supabase
+      .from('posts')
+      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)')
+      .or(`caption.ilike.%${query}%,content.ilike.%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (!joinedResult.error) {
+      state.capabilities.profilesTable = 'available';
+      return joinedResult;
+    }
+
+    if (!isMissingProfilesTableError(joinedResult.error)) {
+      return joinedResult;
+    }
+
+    state.capabilities.profilesTable = 'missing';
+    return supabase
+      .from('posts')
+      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
+      .or(`caption.ilike.%${query}%,content.ilike.%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(15);
+  }
+
+  async function selectReelsWithAuthors() {
+    const joinedResult = await supabase
+      .from('posts')
+      .select('id, user_id, caption, media_url, created_at, profiles(username, avatar_url)')
+      .eq('type', 'reel')
+      .order('created_at', { ascending: false })
+      .limit(12);
+
+    if (!joinedResult.error) {
+      state.capabilities.profilesTable = 'available';
+      return joinedResult;
+    }
+
+    if (!isMissingProfilesTableError(joinedResult.error)) {
+      return joinedResult;
+    }
+
+    state.capabilities.profilesTable = 'missing';
+    return supabase
+      .from('posts')
+      .select('id, user_id, caption, media_url, created_at')
+      .eq('type', 'reel')
+      .order('created_at', { ascending: false })
+      .limit(12);
+  }
+
+  async function selectCommentsWithAuthors(postId) {
+    const joinedResult = await supabase
+      .from('comments')
+      .select('id, body, created_at, user_id, profiles(username, avatar_url)')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (!joinedResult.error) {
+      state.capabilities.profilesTable = 'available';
+      return joinedResult;
+    }
+
+    if (!isMissingProfilesTableError(joinedResult.error)) {
+      return joinedResult;
+    }
+
+    state.capabilities.profilesTable = 'missing';
+    return supabase
+      .from('comments')
+      .select('id, body, created_at, user_id')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+  }
+
+  async function selectPostsByUser(userId) {
+    const joinedResult = await supabase
+      .from('posts')
+      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (!joinedResult.error) {
+      state.capabilities.profilesTable = 'available';
+      return joinedResult;
+    }
+
+    if (!isMissingProfilesTableError(joinedResult.error)) {
+      return joinedResult;
+    }
+
+    state.capabilities.profilesTable = 'missing';
+    return supabase
+      .from('posts')
+      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+  }
+
+  function deriveAuthor(record) {
+    if (record?.profiles) {
+      return record.profiles;
+    }
+
+    if (record?.user_id && state.user?.id && record.user_id === state.user.id) {
+      return {
+        username: state.profile?.username || state.user?.user_metadata?.username || state.user?.email?.split('@')[0] || 'you',
+        avatar_url: state.profile?.avatar_url || DEFAULT_AVATAR,
+      };
+    }
+
+    return {
+      username: 'member',
+      avatar_url: DEFAULT_AVATAR,
+    };
   }
 
   function updateTopbarAction() {
@@ -1327,7 +1520,7 @@
   }
 
   function getViewSubtitle(viewName) {
-    if (viewName === 'home') return state.authMode === 'guest' ? 'Home · Guest' : 'Home';
+    if (viewName === 'home') return state.authMode === 'guest' ? 'Home - Guest' : 'Home';
     if (viewName === 'reels') return 'Reels';
     if (viewName === 'search') return 'Search';
     if (viewName === 'notifications') return 'Alerts';
@@ -1396,6 +1589,14 @@
       return 'Database setup is incomplete. Apply supabase/schema.sql so the profiles table and policies exist.';
     }
 
+    if (message.includes('foreign key') && message.includes('profiles')) {
+      return 'Posting is blocked because the linked profiles table is missing or not connected correctly in Supabase.';
+    }
+
+    if (message.includes('row-level security') || message.includes('violates row-level security')) {
+      return 'This action is blocked by Supabase security rules. Check that the required tables and RLS policies are applied.';
+    }
+
     if (message.includes('storage') && message.includes('bucket')) {
       return 'Storage buckets are missing. Create the required Supabase buckets before uploading files.';
     }
@@ -1432,3 +1633,4 @@
     window.setTimeout(() => toast.remove(), 3600);
   }
 })();
+
