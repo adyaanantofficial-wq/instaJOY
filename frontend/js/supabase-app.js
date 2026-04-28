@@ -19,8 +19,11 @@
     user: null,
     profile: null,
     profileUsername: null,
+    profileUserId: null,
     capabilities: {
       profilesTable: 'unknown',
+      postsSchema: 'unknown',
+      reelsAvailable: 'unknown',
     },
     posts: [],
     reels: [],
@@ -74,6 +77,7 @@
     dom.notificationsList = document.getElementById('notificationsList');
     dom.profileSummary = document.getElementById('profileSummary');
     dom.profileGrid = document.getElementById('profileGrid');
+    dom.profileRefresh = document.getElementById('profileRefresh');
     dom.openCreateButton = document.getElementById('openCreateButton');
     dom.brandSubtitle = document.getElementById('brandSubtitle');
     dom.toastHost = document.getElementById('toastHost');
@@ -116,6 +120,9 @@
     dom.reelInput?.addEventListener('change', handleReelSelection);
     dom.commentForm?.addEventListener('submit', handleCommentSubmit);
     dom.markAllNotifications?.addEventListener('click', markAllNotificationsRead);
+    dom.profileRefresh?.addEventListener('click', () => {
+      loadProfile(state.profileUsername || state.profile?.username || null, state.profileUserId || state.user?.id || null);
+    });
 
     document.querySelectorAll('.nav-button[data-view]').forEach((button) => {
       button.addEventListener('click', () => handleNav(button.dataset.view));
@@ -149,6 +156,7 @@
       state.authMode = 'guest';
       state.user = null;
       state.profile = null;
+      state.profileUserId = null;
       return;
     }
 
@@ -387,6 +395,7 @@
     state.user = null;
     state.profile = null;
     state.profileUsername = null;
+    state.profileUserId = null;
     state.posts = [];
     state.reels = [];
     state.likedPostIds.clear();
@@ -441,10 +450,11 @@
     }
 
     const { action, username, postId } = actionButton.dataset;
-    if (action === 'view-profile' && username) {
-      state.profileUsername = username;
+    if (action === 'view-profile') {
+      state.profileUsername = username || null;
+      state.profileUserId = actionButton.dataset.userId || null;
       renderView('profile');
-      loadProfile(username);
+      loadProfile(state.profileUsername, state.profileUserId);
       return;
     }
 
@@ -470,7 +480,11 @@
     } else if (viewName === 'notifications') {
       loadNotifications();
     } else if (viewName === 'profile') {
-      loadProfile(state.profileUsername || state.profile?.username || null);
+      if (state.authMode === 'user' && state.user) {
+        state.profileUserId = state.profileUserId || state.user.id;
+        state.profileUsername = state.profileUsername || state.profile?.username || state.user?.user_metadata?.username || null;
+      }
+      loadProfile(state.profileUsername || state.profile?.username || null, state.profileUserId || state.user?.id || null);
     } else if (viewName === 'messages') {
       renderMessagesView();
     }
@@ -517,6 +531,7 @@
     state.user = null;
     state.profile = null;
     state.profileUsername = null;
+    state.profileUserId = null;
     state.posts = [];
     state.reels = [];
     state.likedPostIds.clear();
@@ -541,6 +556,7 @@
       state.profile = data;
       state.user.profile = data;
       state.profileUsername = data.username;
+      state.profileUserId = data.id || state.user.id;
       sessionStorage.removeItem(PENDING_PROFILE_KEY);
       return { ok: true };
     }
@@ -551,6 +567,7 @@
       state.profile = fallbackProfile;
       state.user.profile = fallbackProfile;
       state.profileUsername = fallbackProfile.username;
+      state.profileUserId = state.user.id;
       return {
         ok: true,
         degraded: true,
@@ -569,6 +586,7 @@
       state.profile = result.profile;
       state.user.profile = result.profile;
       state.profileUsername = result.profile.username;
+      state.profileUserId = result.profile.id || state.user.id;
       sessionStorage.removeItem(PENDING_PROFILE_KEY);
     }
 
@@ -593,6 +611,7 @@
         state.profile = payload;
         state.user.profile = payload;
         state.profileUsername = payload.username;
+        state.profileUserId = payload.id || state.user.id;
         return {
           ok: true,
           profile: payload,
@@ -603,6 +622,7 @@
     }
 
     state.capabilities.profilesTable = 'available';
+    state.profileUserId = data.id || state.user.id;
     return { ok: true, profile: data };
   }
 
@@ -676,7 +696,7 @@
       return;
     }
 
-    const newPosts = data || [];
+    const newPosts = (data || []).map(normalizePostRecord);
     state.posts = reset ? newPosts : state.posts.concat(newPosts);
     await refreshLikedPostsForVisibleFeed();
     renderHomeFeed();
@@ -718,14 +738,15 @@
   }
 
   function renderPostCard(post) {
-    const author = deriveAuthor(post);
-    const createdAt = new Date(post.created_at).toLocaleString();
-    const liked = state.likedPostIds.has(post.id);
+    const normalized = normalizePostRecord(post);
+    const author = deriveAuthor(normalized);
+    const createdAt = new Date(normalized.created_at).toLocaleString();
+    const liked = state.likedPostIds.has(normalized.id);
     const likeDisabled = state.authMode !== 'user';
-    const copy = post.type === 'text' ? post.content || post.caption || '' : post.caption || post.content || '';
-    const media = post.type === 'reel'
-      ? (post.media_url ? `<video controls preload="metadata" src="${escapeHtml(post.media_url)}" class="post-image"></video>` : '')
-      : (post.image_url ? `<img src="${escapeHtml(post.image_url)}" alt="Post image" loading="lazy" class="post-image">` : '');
+    const copy = normalized.type === 'text' ? normalized.content || normalized.caption || '' : normalized.caption || normalized.content || '';
+    const media = normalized.type === 'reel'
+      ? (normalized.media_url ? `<video controls preload="metadata" src="${escapeHtml(normalized.media_url)}" class="post-image"></video>` : '')
+      : (normalized.image_url ? `<img src="${escapeHtml(normalized.image_url)}" alt="Post image" loading="lazy" class="post-image">` : '');
 
     return `
       <article class="card post-card">
@@ -734,14 +755,14 @@
             <strong>${escapeHtml(author.username || 'anonymous')}</strong>
             <div class="post-meta">${escapeHtml(createdAt)}</div>
           </div>
-          <button class="ghost-button compact" data-action="view-profile" data-username="${escapeHtml(author.username || '')}">Profile</button>
+          <button class="ghost-button compact" data-action="view-profile" data-username="${escapeHtml(author.username || '')}" data-user-id="${escapeHtml(normalized.user_id || '')}">Profile</button>
         </header>
-        ${post.category ? `<div class="post-chip">${escapeHtml(post.category)}</div>` : ''}
+        ${normalized.category ? `<div class="post-chip">${escapeHtml(normalized.category)}</div>` : ''}
         <div class="post-body">${escapeHtml(copy)}</div>
         ${media}
         <footer class="post-actions">
-          <button class="secondary-button" data-action="toggle-like" data-post-id="${post.id}" ${likeDisabled ? 'disabled' : ''}>${liked ? 'Unlike' : 'Like'}</button>
-          <button class="secondary-button" data-action="comment" data-post-id="${post.id}">Comments</button>
+          <button class="secondary-button" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>${liked ? 'Unlike' : 'Like'}</button>
+          <button class="secondary-button" data-action="comment" data-post-id="${normalized.id}">Comments</button>
         </footer>
       </article>
     `;
@@ -773,8 +794,8 @@
     }
 
     renderHomeFeed();
-    if (state.activeView === 'profile' && state.profileUsername) {
-      loadProfile(state.profileUsername);
+    if (state.activeView === 'profile' && (state.profileUsername || state.profileUserId)) {
+      loadProfile(state.profileUsername, state.profileUserId || state.user?.id || null);
     }
   }
 
@@ -874,9 +895,10 @@
     }
 
     const users = usersResult.data || [];
-    const posts = postsResult.data || [];
-    const userSummaryText = state.capabilities.profilesTable === 'missing' ? 'user profiles unavailable' : `${users.length} users`;
-    dom.searchStatus.textContent = `Found ${userSummaryText} and ${posts.length} posts.`;
+    const posts = (postsResult.data || []).map(normalizePostRecord);
+    dom.searchStatus.textContent = state.capabilities.profilesTable === 'missing'
+      ? `Found ${posts.length} posts. User profile search is unavailable in this deployment.`
+      : `Found ${users.length} users and ${posts.length} posts.`;
     dom.userSearchResults.innerHTML = users.length
       ? users.map((user) => `<article class="card compact-card"><button class="ghost-button" data-action="view-profile" data-username="${escapeHtml(user.username)}">${escapeHtml(user.username)}</button></article>`).join('')
       : `<div class="empty-state">${state.capabilities.profilesTable === 'missing' ? 'Profile search is unavailable until the profiles table exists.' : 'No matching users yet.'}</div>`;
@@ -907,9 +929,9 @@
       return;
     }
 
-    state.reels = data || [];
+    state.reels = (data || []).map(normalizePostRecord).filter((post) => post.type === 'reel');
     if (!state.reels.length) {
-      dom.reelsFeed.innerHTML = '<div class="empty-state">No reels yet.</div>';
+      dom.reelsFeed.innerHTML = `<div class="empty-state">${state.capabilities.reelsAvailable === false ? 'Reels are not supported by this deployment yet.' : 'No reels yet.'}</div>`;
       return;
     }
 
@@ -917,17 +939,18 @@
   }
 
   function renderReelCard(reel) {
-    const author = deriveAuthor(reel);
+    const normalized = normalizePostRecord(reel);
+    const author = deriveAuthor(normalized);
     return `
       <article class="card reel-card">
         <header class="post-header">
           <div class="post-author">
             <strong>${escapeHtml(author.username || 'anonymous')}</strong>
-            <div class="post-meta">${escapeHtml(new Date(reel.created_at).toLocaleString())}</div>
+            <div class="post-meta">${escapeHtml(new Date(normalized.created_at).toLocaleString())}</div>
           </div>
         </header>
-        ${reel.media_url ? `<video controls preload="metadata" src="${escapeHtml(reel.media_url)}" class="reel-video"></video>` : ''}
-        <div class="post-body">${escapeHtml(reel.caption || '')}</div>
+        ${normalized.media_url ? `<video controls preload="metadata" src="${escapeHtml(normalized.media_url)}" class="reel-video"></video>` : ''}
+        <div class="post-body">${escapeHtml(normalized.caption || normalized.content || '')}</div>
       </article>
     `;
   }
@@ -985,11 +1008,14 @@
       return;
     }
 
-    dom.messagesView.innerHTML = '<div class="empty-state">Realtime chat is not wired in this Supabase frontend yet. Feed, profile, follow, comments, and notifications are ready.</div>';
+    dom.messagesView.innerHTML = '<div class="empty-state">Messaging is not available in this deployment yet. Feed, search, comments, and profile browsing still work.</div>';
   }
 
-  async function loadProfile(username) {
-    if (!username) {
+  async function loadProfile(username, userId) {
+    const targetUsername = username || null;
+    const targetUserId = userId || null;
+
+    if (!targetUsername && !targetUserId) {
       if (state.authMode === 'guest') {
         dom.profileSummary.innerHTML = `
           <div class="empty-state">
@@ -1005,20 +1031,22 @@
     }
 
     if (state.capabilities.profilesTable === 'missing') {
-      dom.profileSummary.innerHTML = `
-        <div class="empty-state">
-          Public profiles are unavailable right now because the profiles table is missing. Feed browsing and basic posting can still continue where the database allows it.
-        </div>
-      `;
-      dom.profileGrid.innerHTML = '';
+      await renderLegacyProfileFallback(targetUserId || state.user?.id || null, targetUsername);
       return;
     }
 
-    const { data: users, error: userError } = await supabase
+    let profileQuery = supabase
       .from('profiles')
       .select('*')
-      .eq('username', username)
       .limit(1);
+
+    if (targetUsername) {
+      profileQuery = profileQuery.eq('username', targetUsername);
+    } else if (targetUserId) {
+      profileQuery = profileQuery.eq('id', targetUserId);
+    }
+
+    const { data: users, error: userError } = await profileQuery;
 
     if (userError || !users?.length) {
       dom.profileSummary.innerHTML = `<div class="empty-state">${escapeHtml(humanizeError(userError || new Error('Profile not found.')))}</div>`;
@@ -1028,6 +1056,7 @@
 
     const profile = users[0];
     state.profileUsername = profile.username;
+    state.profileUserId = profile.id;
     const [postsResult, followersResult, followingResult] = await Promise.all([
       selectPostsByUser(profile.id),
       supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', profile.id),
@@ -1039,7 +1068,7 @@
       return;
     }
 
-    const posts = postsResult.data || [];
+    const posts = (postsResult.data || []).map(normalizePostRecord);
     const followerCount = followersResult.count || 0;
     const followingCount = followingResult.count || 0;
     const isOwner = state.user?.id === profile.id;
@@ -1100,7 +1129,7 @@
     }
 
     showToast(isFollowing ? 'Unfollowed successfully.' : 'Started following user.', 'success');
-    await loadProfile(state.profileUsername);
+    await loadProfile(state.profileUsername, state.profileUserId || targetUserId);
   }
 
   async function openCreateModal() {
@@ -1148,6 +1177,7 @@
       }
       payload.category = dom.textCategory?.value || null;
       payload.content = content;
+      payload.caption = content;
     }
 
     if (type === 'image') {
@@ -1162,14 +1192,29 @@
       }
       const uploadResult = await uploadFile(imageFile, 'post-images');
       if (uploadResult.error) {
-        showToast(humanizeError(uploadResult.error), 'error');
-        return;
+        if (isBucketMissingError(uploadResult.error)) {
+          const inlineImageResult = await convertImageToDataUrl(imageFile);
+          if (inlineImageResult.error) {
+            showToast(humanizeError(inlineImageResult.error), 'error');
+            return;
+          }
+          payload.image_url = inlineImageResult.dataUrl;
+        } else {
+          showToast(humanizeError(uploadResult.error), 'error');
+          return;
+        }
+      } else {
+        payload.image_url = uploadResult.publicUrl;
       }
       payload.caption = dom.imageCaption?.value.trim() || null;
-      payload.image_url = uploadResult.publicUrl;
     }
 
     if (type === 'reel') {
+      if (state.capabilities.reelsAvailable === false) {
+        showToast('Reels are not supported by this deployment yet.', 'info');
+        return;
+      }
+
       const reelFile = dom.reelInput?.files?.[0];
       if (!reelFile) {
         showToast('Choose a reel before publishing.', 'error');
@@ -1188,9 +1233,9 @@
       payload.media_url = uploadResult.publicUrl;
     }
 
-    const { error } = await supabase.from('posts').insert(payload);
-    if (error) {
-      showToast(humanizeError(error), 'error');
+    const insertResult = await insertPostWithCompatibility(payload);
+    if (!insertResult.ok) {
+      showToast(humanizeError(insertResult.error), 'error');
       return;
     }
 
@@ -1214,6 +1259,24 @@
 
     const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
     return { publicUrl: publicUrlData.publicUrl };
+  }
+
+  async function convertImageToDataUrl(file) {
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      return { dataUrl };
+    } catch (error) {
+      return { error };
+    }
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Image fallback conversion failed.'));
+      reader.readAsDataURL(file);
+    });
   }
 
   function handleImageSelection(event) {
@@ -1348,79 +1411,15 @@
   }
 
   async function selectPostsWithAuthors(rangeStart, rangeEnd) {
-    const joinedResult = await supabase
-      .from('posts')
-      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)')
-      .order('created_at', { ascending: false })
-      .range(rangeStart, rangeEnd);
-
-    if (!joinedResult.error) {
-      state.capabilities.profilesTable = 'available';
-      return joinedResult;
-    }
-
-    if (!isMissingProfilesTableError(joinedResult.error)) {
-      return joinedResult;
-    }
-
-    state.capabilities.profilesTable = 'missing';
-    return supabase
-      .from('posts')
-      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
-      .order('created_at', { ascending: false })
-      .range(rangeStart, rangeEnd);
+    return runPostQueryPlan({ mode: 'feed', rangeStart, rangeEnd });
   }
 
   async function selectSearchedPosts(query) {
-    const joinedResult = await supabase
-      .from('posts')
-      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)')
-      .or(`caption.ilike.%${query}%,content.ilike.%${query}%`)
-      .order('created_at', { ascending: false })
-      .limit(15);
-
-    if (!joinedResult.error) {
-      state.capabilities.profilesTable = 'available';
-      return joinedResult;
-    }
-
-    if (!isMissingProfilesTableError(joinedResult.error)) {
-      return joinedResult;
-    }
-
-    state.capabilities.profilesTable = 'missing';
-    return supabase
-      .from('posts')
-      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
-      .or(`caption.ilike.%${query}%,content.ilike.%${query}%`)
-      .order('created_at', { ascending: false })
-      .limit(15);
+    return runPostQueryPlan({ mode: 'search', query, limit: 15 });
   }
 
   async function selectReelsWithAuthors() {
-    const joinedResult = await supabase
-      .from('posts')
-      .select('id, user_id, caption, media_url, created_at, profiles(username, avatar_url)')
-      .eq('type', 'reel')
-      .order('created_at', { ascending: false })
-      .limit(12);
-
-    if (!joinedResult.error) {
-      state.capabilities.profilesTable = 'available';
-      return joinedResult;
-    }
-
-    if (!isMissingProfilesTableError(joinedResult.error)) {
-      return joinedResult;
-    }
-
-    state.capabilities.profilesTable = 'missing';
-    return supabase
-      .from('posts')
-      .select('id, user_id, caption, media_url, created_at')
-      .eq('type', 'reel')
-      .order('created_at', { ascending: false })
-      .limit(12);
+    return runPostQueryPlan({ mode: 'reels', limit: 18 });
   }
 
   async function selectCommentsWithAuthors(postId) {
@@ -1448,29 +1447,328 @@
   }
 
   async function selectPostsByUser(userId) {
-    const joinedResult = await supabase
-      .from('posts')
-      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(30);
+    return runPostQueryPlan({ mode: 'profile', userId, limit: 30 });
+  }
 
-    if (!joinedResult.error) {
+  async function runPostQueryPlan(options) {
+    const variants = buildPostQueryVariants(options);
+    let lastRecoverableError = null;
+
+    for (const variant of variants) {
+      const result = await executePostQueryVariant(variant, options);
+      if (!result.error) {
+        applyPostSchemaVariant(variant.name);
+        return { data: result.data || [], error: null };
+      }
+
+      if (isRecoverablePostSelectError(result.error)) {
+        if (isMissingProfilesTableError(result.error)) {
+          state.capabilities.profilesTable = 'missing';
+        }
+        lastRecoverableError = result.error;
+        continue;
+      }
+
+      return result;
+    }
+
+    return { data: [], error: lastRecoverableError };
+  }
+
+  function buildPostQueryVariants(options) {
+    const baseVariants = [
+      {
+        name: 'modern_joined',
+        select: 'id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)',
+        searchMode: 'caption_content',
+        localReelFilter: false,
+      },
+      {
+        name: 'modern_plain',
+        select: 'id, user_id, type, category, caption, content, image_url, media_url, created_at',
+        searchMode: 'caption_content',
+        localReelFilter: false,
+      },
+      {
+        name: 'legacy_media_joined',
+        select: 'id, user_id, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)',
+        searchMode: 'caption_content',
+        localReelFilter: true,
+      },
+      {
+        name: 'legacy_media_plain',
+        select: 'id, user_id, caption, content, image_url, media_url, created_at',
+        searchMode: 'caption_content',
+        localReelFilter: true,
+      },
+      {
+        name: 'legacy_content_joined',
+        select: 'id, user_id, caption, content, image_url, created_at, profiles(username, avatar_url)',
+        searchMode: 'caption_content',
+        localReelFilter: true,
+      },
+      {
+        name: 'legacy_content_plain',
+        select: 'id, user_id, caption, content, image_url, created_at',
+        searchMode: 'caption_content',
+        localReelFilter: true,
+      },
+      {
+        name: 'legacy_caption_joined',
+        select: 'id, user_id, caption, image_url, created_at, profiles(username, avatar_url)',
+        searchMode: 'caption_only',
+        localReelFilter: true,
+      },
+      {
+        name: 'legacy_caption_plain',
+        select: 'id, user_id, caption, image_url, created_at',
+        searchMode: 'caption_only',
+        localReelFilter: true,
+      },
+    ];
+
+    if (options.mode === 'reels') {
+      return baseVariants.filter((variant) => variant.name.includes('modern') || variant.name.includes('legacy_media'));
+    }
+
+    return baseVariants;
+  }
+
+  async function executePostQueryVariant(variant, options) {
+    let query = supabase.from('posts').select(variant.select).order('created_at', { ascending: false });
+
+    if (options.userId) {
+      query = query.eq('user_id', options.userId);
+    }
+
+    if (options.mode === 'search') {
+      if (variant.searchMode === 'caption_content') {
+        query = query.or(`caption.ilike.%${options.query}%,content.ilike.%${options.query}%`);
+      } else {
+        query = query.ilike('caption', `%${options.query}%`);
+      }
+    }
+
+    if (options.mode === 'reels' && !variant.localReelFilter) {
+      query = query.eq('type', 'reel');
+    }
+
+    if (options.mode === 'feed') {
+      query = query.range(options.rangeStart, options.rangeEnd);
+    } else {
+      const requestedLimit = options.mode === 'reels' && variant.localReelFilter
+        ? Math.max((options.limit || 12) * 3, 30)
+        : (options.limit || 15);
+      query = query.limit(requestedLimit);
+    }
+
+    const result = await query;
+    if (result.error || !result.data) {
+      return result;
+    }
+
+    let data = result.data.map(normalizePostRecord);
+    if (options.mode === 'reels') {
+      data = data.filter((post) => post.type === 'reel').slice(0, options.limit || 12);
+    }
+
+    return { data, error: null };
+  }
+
+  function applyPostSchemaVariant(variantName) {
+    if (variantName.includes('modern')) {
+      state.capabilities.postsSchema = 'modern';
+      state.capabilities.reelsAvailable = true;
+    } else if (variantName.includes('legacy_media')) {
+      state.capabilities.postsSchema = 'legacy_media';
+      state.capabilities.reelsAvailable = true;
+    } else if (variantName.includes('legacy_content')) {
+      state.capabilities.postsSchema = 'legacy_content';
+      state.capabilities.reelsAvailable = false;
+    } else {
+      state.capabilities.postsSchema = 'legacy_caption';
+      state.capabilities.reelsAvailable = false;
+    }
+
+    if (variantName.endsWith('_joined')) {
       state.capabilities.profilesTable = 'available';
-      return joinedResult;
+    } else if (variantName.endsWith('_plain')) {
+      state.capabilities.profilesTable = 'missing';
+    }
+  }
+
+  function normalizePostRecord(post) {
+    const normalized = { ...(post || {}) };
+    normalized.caption = normalized.caption || normalized.content || '';
+    normalized.content = normalized.content || normalized.caption || '';
+    normalized.image_url = normalized.image_url || null;
+    normalized.media_url = normalized.media_url || null;
+    normalized.category = typeof normalized.category === 'string' && normalized.category.trim() ? normalized.category : null;
+    normalized.type = resolvePostType(normalized);
+    return normalized;
+  }
+
+  function resolvePostType(post) {
+    if (post?.type === 'reel' || post?.type === 'image' || post?.type === 'text') {
+      return post.type;
     }
 
-    if (!isMissingProfilesTableError(joinedResult.error)) {
-      return joinedResult;
+    if (post?.media_url) {
+      return 'reel';
     }
 
-    state.capabilities.profilesTable = 'missing';
-    return supabase
-      .from('posts')
-      .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(30);
+    if (post?.image_url) {
+      return 'image';
+    }
+
+    return 'text';
+  }
+
+  async function renderLegacyProfileFallback(userId, username) {
+    const targetUserId = userId || state.user?.id || null;
+    const isOwner = Boolean(targetUserId && state.user?.id === targetUserId);
+
+    state.profileUserId = targetUserId;
+    state.profileUsername = isOwner ? (state.profile?.username || username || null) : (username || null);
+
+    if (!targetUserId) {
+      dom.profileSummary.innerHTML = `
+        <div class="empty-state">
+          Profile details are unavailable in this deployment.
+        </div>
+      `;
+      dom.profileGrid.innerHTML = '';
+      return;
+    }
+
+    const postsResult = await selectPostsByUser(targetUserId);
+    if (postsResult.error) {
+      dom.profileSummary.innerHTML = `<div class="empty-state">${escapeHtml(humanizeError(postsResult.error))}</div>`;
+      dom.profileGrid.innerHTML = '';
+      return;
+    }
+
+    const posts = (postsResult.data || []).map(normalizePostRecord);
+    const displayName = isOwner
+      ? (state.profile?.display_name || state.profile?.username || state.user?.user_metadata?.display_name || state.user?.email?.split('@')[0] || 'You')
+      : (username || 'Member');
+    const subtitle = isOwner
+      ? `@${escapeHtml(state.profile?.username || normalizeUsername(displayName) || 'member')}`
+      : 'Limited profile view';
+    const note = isOwner
+      ? 'Your account is working in compatibility mode because the public profiles table is missing.'
+      : 'This profile is shown in compatibility mode because public profile records are unavailable.';
+
+    dom.profileSummary.innerHTML = `
+      <div class="profile-header">
+        <img src="${escapeHtml(DEFAULT_AVATAR)}" alt="${escapeHtml(displayName)}" class="avatar-large">
+        <div class="profile-copy">
+          <h2>${escapeHtml(displayName)}</h2>
+          <div class="post-meta">${subtitle}</div>
+          <p>${note}</p>
+        </div>
+      </div>
+      <div class="profile-stats-inline">
+        <span><strong>${posts.length}</strong> posts</span>
+      </div>
+    `;
+
+    dom.profileGrid.innerHTML = posts.length ? posts.map(renderPostCard).join('') : '<div class="empty-state">No posts on this profile yet.</div>';
+  }
+
+  async function insertPostWithCompatibility(payload) {
+    const variants = buildPostInsertVariants(payload);
+    let lastError = null;
+
+    for (const variant of variants) {
+      const { error } = await supabase.from('posts').insert(variant);
+      if (!error) {
+        rememberPostInsertVariant(variant);
+        return { ok: true };
+      }
+
+      if (isRecoverablePostInsertError(error, payload.type, variant)) {
+        lastError = error;
+        continue;
+      }
+
+      return { ok: false, error };
+    }
+
+    return { ok: false, error: lastError || new Error('Post could not be created.') };
+  }
+
+  function buildPostInsertVariants(payload) {
+    if (payload.type === 'text') {
+      const text = payload.content || payload.caption || '';
+      return [
+        { user_id: payload.user_id, type: 'text', category: payload.category, content: text, caption: text },
+        { user_id: payload.user_id, type: 'text', content: text, caption: text },
+        { user_id: payload.user_id, content: text, caption: text },
+        { user_id: payload.user_id, caption: text },
+      ];
+    }
+
+    if (payload.type === 'image') {
+      return [
+        { user_id: payload.user_id, type: 'image', caption: payload.caption, image_url: payload.image_url },
+        { user_id: payload.user_id, caption: payload.caption, image_url: payload.image_url },
+      ];
+    }
+
+    return [
+      { user_id: payload.user_id, type: 'reel', caption: payload.caption, media_url: payload.media_url },
+      { user_id: payload.user_id, caption: payload.caption, media_url: payload.media_url },
+    ];
+  }
+
+  function rememberPostInsertVariant(variant) {
+    if (Object.prototype.hasOwnProperty.call(variant, 'media_url')) {
+      state.capabilities.reelsAvailable = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(variant, 'type')) {
+      state.capabilities.postsSchema = state.capabilities.postsSchema === 'unknown' ? 'modern' : state.capabilities.postsSchema;
+    } else if (Object.prototype.hasOwnProperty.call(variant, 'content')) {
+      state.capabilities.postsSchema = 'legacy_content';
+    } else {
+      state.capabilities.postsSchema = 'legacy_caption';
+    }
+  }
+
+  function isRecoverablePostSelectError(error) {
+    return isMissingProfilesTableError(error)
+      || isMissingPostColumnError(error, 'type')
+      || isMissingPostColumnError(error, 'category')
+      || isMissingPostColumnError(error, 'content')
+      || isMissingPostColumnError(error, 'media_url');
+  }
+
+  function isRecoverablePostInsertError(error, postType, variant) {
+    if (isMissingPostColumnError(error, 'type') || isMissingPostColumnError(error, 'category') || isMissingPostColumnError(error, 'content')) {
+      return true;
+    }
+
+    if (isMissingPostColumnError(error, 'media_url')) {
+      state.capabilities.reelsAvailable = false;
+      return postType === 'reel' && Object.prototype.hasOwnProperty.call(variant, 'type');
+    }
+
+    if (isMissingPostColumnError(error, 'image_url')) {
+      return postType === 'image' && Object.prototype.hasOwnProperty.call(variant, 'type');
+    }
+
+    return false;
+  }
+
+  function isMissingPostColumnError(error, columnName) {
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes(`column posts.${columnName}`) && message.includes('does not exist');
+  }
+
+  function isBucketMissingError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes('bucket not found') || message.includes('the resource was not found') && message.includes('bucket');
   }
 
   function deriveAuthor(record) {
@@ -1587,6 +1885,22 @@
 
     if (message.includes('schema cache') || message.includes('public.profiles') || message.includes('relation "profiles" does not exist')) {
       return 'Database setup is incomplete. Apply supabase/schema.sql so the profiles table and policies exist.';
+    }
+
+    if (message.includes('column posts.type') && message.includes('does not exist')) {
+      return 'This deployment is using an older posts table. The app has switched to compatibility mode for the feed.';
+    }
+
+    if (message.includes('column posts.media_url') && message.includes('does not exist')) {
+      return 'Reels are not supported by this deployment yet.';
+    }
+
+    if (message.includes('column posts.content') && message.includes('does not exist')) {
+      return 'This deployment stores text posts in a legacy format. Compatibility mode is active.';
+    }
+
+    if (message.includes('bucket not found')) {
+      return 'Supabase storage is not configured for this deployment. Small images will try to publish in compatibility mode.';
     }
 
     if (message.includes('foreign key') && message.includes('profiles')) {
