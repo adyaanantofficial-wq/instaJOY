@@ -80,7 +80,7 @@ serve(async (req) => {
   }
 
   const { data: userRecord, error: userError } = await supabase
-    .from('users')
+    .from('profiles')
     .select('fcm_token')
     .eq('id', recipientId)
     .single();

@@ -191,7 +191,7 @@
       state.authMode = 'user';
       state.user = data.user;
       localStorage.setItem('authMode', 'user');
-      const profileInsert = await supabase.from('users').insert({
+      const profileInsert = await supabase.from('profiles').insert({
         id: state.user.id,
         username,
         display_name: username,
@@ -220,7 +220,7 @@
 
   async function loadCurrentUserProfile() {
     if (!state.user) return;
-    const { data, error } = await supabase.from('users').select('*').eq('id', state.user.id).single();
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).single();
     if (!error && data) {
       state.user.profile = data;
     }
@@ -273,7 +273,7 @@
 
     const { data, error } = await supabase
       .from('posts')
-      .select('*, users(username, avatar_url)', { count: 'exact' })
+      .select('*, profiles(username, avatar_url)', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(rangeStart, rangeEnd);
 
@@ -304,7 +304,7 @@
   }
 
   function renderPostCard(post) {
-    const author = post.users || {};
+    const author = post.profiles || {};
     const createdAt = new Date(post.created_at).toLocaleString();
     const likeDisabled = state.authMode === 'guest';
     const liked = state.likedPostIds.has(post.id);
@@ -357,8 +357,8 @@
     dom.searchStatus.textContent = 'Searching...';
 
     const [usersResult, postsResult] = await Promise.all([
-      supabase.from('users').select('id,username,avatar_url').ilike('username', `%${query}%`).limit(15),
-      supabase.from('posts').select('*, users(username, avatar_url)').ilike('caption', `%${query}%`).or(`content.ilike.%${query}%`).order('created_at', { ascending: false }).limit(15),
+      supabase.from('profiles').select('id,username,avatar_url').ilike('username', `%${query}%`).limit(15),
+      supabase.from('posts').select('*, profiles(username, avatar_url)').ilike('caption', `%${query}%`).or(`content.ilike.%${query}%`).order('created_at', { ascending: false }).limit(15),
     ]);
 
     if (usersResult.error || postsResult.error) {
@@ -384,7 +384,7 @@
 
     const { data, error } = await supabase
       .from('posts')
-      .select('*, users(username, avatar_url)')
+      .select('*, profiles(username, avatar_url)')
       .eq('type', 'reel')
       .order('created_at', { ascending: false })
       .limit(12);
@@ -400,7 +400,7 @@
   }
 
   function renderReelCard(reel) {
-    const author = reel.users || {};
+    const author = reel.profiles || {};
     return `
       <article class="card reel-card">
         <header class="post-header">
@@ -461,7 +461,7 @@
     }
 
     const { data: users, error: userError } = await supabase
-      .from('users')
+      .from('profiles')
       .select('*')
       .eq('username', targetUsername)
       .limit(1);
@@ -474,7 +474,7 @@
     const profile = users[0];
     const { data: posts, error: postsError } = await supabase
       .from('posts')
-      .select('*, users(username, avatar_url)')
+      .select('*, profiles(username, avatar_url)')
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -647,7 +647,7 @@
     const token = await window.INSTAJOY_FCM.getFcmToken();
     if (!token || !state.user) return;
 
-    await supabase.from('users').update({ fcm_token: token }).eq('id', state.user.id);
+    await supabase.from('profiles').update({ fcm_token: token }).eq('id', state.user.id);
   }
 
   function debounce(fn, delay) {

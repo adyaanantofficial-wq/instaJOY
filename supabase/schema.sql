@@ -1,9 +1,9 @@
 -- Supabase PostgreSQL schema for instaJOY
--- Main tables: users, posts, likes, comments, follows, notifications
+-- Main tables: profiles, posts, likes, comments, follows, notifications
 -- Read-only guest access; authenticated users can modify only own data.
 
--- Users table linked to Supabase Auth
-CREATE TABLE IF NOT EXISTS public.users (
+-- Profiles table linked to Supabase Auth
+CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username text NOT NULL UNIQUE,
   display_name text,
@@ -14,14 +14,14 @@ CREATE TABLE IF NOT EXISTS public.users (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_username ON public.users (username);
+CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles (username);
 
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users public read" ON public.users
+CREATE POLICY "Profiles public read" ON public.profiles
   FOR SELECT USING (true);
 
-CREATE POLICY "Users self manage" ON public.users
+CREATE POLICY "Profiles self manage" ON public.profiles
   FOR INSERT WITH CHECK (auth.uid() = id)
   FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id)
   FOR DELETE USING (auth.uid() = id);
@@ -29,7 +29,7 @@ CREATE POLICY "Users self manage" ON public.users
 -- Posts table
 CREATE TABLE IF NOT EXISTS public.posts (
   id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   type text NOT NULL CHECK (type IN ('text', 'image', 'reel')),
   category text,
   caption text,
@@ -60,7 +60,7 @@ CREATE POLICY "Posts delete own" ON public.posts
 -- Likes table
 CREATE TABLE IF NOT EXISTS public.likes (
   id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, post_id)
@@ -83,7 +83,7 @@ CREATE POLICY "Likes delete own" ON public.likes
 -- Comments table
 CREATE TABLE IF NOT EXISTS public.comments (
   id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   post_id uuid NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
   body text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -106,8 +106,8 @@ CREATE POLICY "Comments delete own" ON public.comments
 -- Follows table
 CREATE TABLE IF NOT EXISTS public.follows (
   id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  follower_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  following_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  follower_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  following_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (follower_id, following_id)
 );
@@ -129,8 +129,8 @@ CREATE POLICY "Follows delete own" ON public.follows
 -- Notifications table
 CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT auth.random_uuid(),
-  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  actor_id uuid REFERENCES public.users(id),
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  actor_id uuid REFERENCES public.profiles(id),
   type text NOT NULL,
   entity_type text NOT NULL,
   entity_id uuid,
@@ -166,9 +166,9 @@ SELECT
   posts.image_url,
   posts.media_url,
   posts.created_at,
-  users.username,
-  users.avatar_url
+  profiles.username,
+  profiles.avatar_url
 FROM public.posts
-JOIN public.users ON posts.user_id = users.id;
+JOIN public.profiles ON posts.user_id = profiles.id;
 
 GRANT SELECT ON public.post_feed TO anon;
