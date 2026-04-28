@@ -119,7 +119,9 @@ async function connectDB() {
         return db;
     }
 
-    if (!process.env.MONGODB_URI) {
+    // Force connect using the provided credentials
+    const uri = process.env.MONGODB_URI || 'mongodb+srv://adyaanantofficial_db_user:3lMYfcXZ8V7JmFY7@cluster0.mnhzxzh.mongodb.net/instaJOY?retryWrites=true&w=majority&appName=Cluster0';
+    if (!uri) {
         throw new Error('MONGODB_URI is required');
     }
 
@@ -145,7 +147,7 @@ async function connectDB() {
     }
 
     try {
-        await attemptConnect(process.env.MONGODB_URI);
+        await attemptConnect(uri);
     } catch (error) {
         if (client) {
             await client.close().catch(() => {});
@@ -153,7 +155,7 @@ async function connectDB() {
             db = null;
         }
 
-        const originalUri = process.env.MONGODB_URI;
+        const originalUri = uri;
         const message = String(error.message || '');
         const isSrvUri = originalUri.startsWith('mongodb+srv://');
 

@@ -198,8 +198,8 @@
         localStorage.removeItem('instajoy_access_token');
         localStorage.removeItem('instajoy_refresh_token');
         localStorage.removeItem('instajoy_user');
-        // Reload to trigger guest mode initialization
-        window.location.href = 'index.html?mode=guest';
+        // Redirect directly to home.html for guest
+        window.location.href = 'home.html';
     }
 
     function bindStaticEvents() {
@@ -321,7 +321,8 @@
     }
 
     async function switchView(viewName) {
-        if (!state.session.token) {
+        // Allow access if token OR guest exists, redirect only if BOTH are missing
+        if (!state.session.token && !isGuestMode()) {
             showAuthView();
             return;
         }
