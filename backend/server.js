@@ -144,6 +144,17 @@ app.get('/api/health', async (req, res) => {
     });
 });
 
+// Add a health check endpoint for MongoDB connectivity
+app.get('/api/db-health', async (req, res) => {
+    try {
+        const db = await connectDB();
+        await db.command({ ping: 1 });
+        res.json({ success: true, message: 'MongoDB is connected' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'MongoDB connection failed', error: error.message });
+    }
+});
+
 app.use('/api', generalLimiter);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/posts', postRoutes);
