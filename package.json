@@ -8,7 +8,7 @@
     "dev": "nodemon server.js"
   },
   "engines": {
-    "node": ">=22.22.0 <26"
+    "node": "22.22.0"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
