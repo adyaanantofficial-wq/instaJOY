@@ -1,4 +1,5 @@
 const { MongoClient, ServerApiVersion } = require('mongodb');
+const dns = require('dns');
 
 let client = null;
 let db = null;
@@ -38,6 +39,37 @@ function rewriteMongoConnectionError(error, uri) {
             `Verify the Atlas cluster is available, Atlas Network Access allows this deployment, ` +
             `and if you are using an SRV URI try Atlas's standard connection string in MONGODB_URI.`;
     }
+}
+
+const fallbackDnsServers = ['8.8.8.8', '1.1.1.1'];
+
+async function resolveSrvRecords(hostname) {
+    const resolver = new dns.promises.Resolver();
+    resolver.setServers(fallbackDnsServers);
+    return resolver.resolveSrv(`_mongodb._tcp.${hostname}`);
+}
+
+function buildStandardMongoUri(srvUri, srvRecords) {
+    const parsed = new URL(srvUri);
+    const auth = parsed.username
+        ? `${encodeURIComponent(parsed.username)}:${encodeURIComponent(parsed.password)}@`
+        : '';
+    const pathname = parsed.pathname || '/';
+    const searchParams = new URLSearchParams(parsed.searchParams);
+
+    if (!searchParams.has('tls') && !searchParams.has('ssl')) {
+        searchParams.set('tls', 'true');
+    }
+
+    if (parsed.username && !searchParams.has('authSource')) {
+        searchParams.set('authSource', 'admin');
+    }
+
+    const hostList = srvRecords
+        .map((record) => `${record.name}:${record.port}`)
+        .join(',');
+
+    return `mongodb://${auth}${hostList}${pathname}?${searchParams.toString()}`;
 }
 
 async function createIndexes(database) {
@@ -91,21 +123,25 @@ async function connectDB() {
         throw new Error('MONGODB_URI is required');
     }
 
-    client = new MongoClient(process.env.MONGODB_URI, {
-        connectTimeoutMS: 10000,
-        serverSelectionTimeoutMS: 10000,
-        serverApi: {
-            version: ServerApiVersion.v1,
-            strict: true,
-            deprecationErrors: true,
-        },
-    });
+    async function attemptConnect(uri) {
+        client = new MongoClient(uri, {
+            connectTimeoutMS: 10000,
+            serverSelectionTimeoutMS: 10000,
+            serverApi: {
+                version: ServerApiVersion.v1,
+                strict: true,
+                deprecationErrors: true,
+            },
+        });
 
-    try {
         await client.connect();
         db = process.env.MONGODB_DB ? client.db(process.env.MONGODB_DB) : client.db();
         await db.command({ ping: 1 });
         await createIndexes(db);
+    }
+
+    try {
+        await attemptConnect(process.env.MONGODB_URI);
     } catch (error) {
         if (client) {
             await client.close().catch(() => {});
@@ -113,8 +149,35 @@ async function connectDB() {
             db = null;
         }
 
-        rewriteMongoConnectionError(error, process.env.MONGODB_URI);
+        const originalUri = process.env.MONGODB_URI;
+        const message = String(error.message || '');
+        const isSrvUri = originalUri.startsWith('mongodb+srv://');
 
+        if (
+            isSrvUri &&
+            (message.includes('querySrv') || message.includes('ENOTFOUND') || message.includes('ECONNREFUSED'))
+        ) {
+            try {
+                const parsed = new URL(originalUri);
+                const srvHost = parsed.hostname;
+                const srvRecords = await resolveSrvRecords(srvHost);
+                const fallbackUri = buildStandardMongoUri(originalUri, srvRecords);
+
+                await attemptConnect(fallbackUri);
+                return db;
+            } catch (fallbackError) {
+                if (client) {
+                    await client.close().catch(() => {});
+                    client = null;
+                    db = null;
+                }
+
+                rewriteMongoConnectionError(fallbackError, originalUri);
+                throw fallbackError;
+            }
+        }
+
+        rewriteMongoConnectionError(error, originalUri);
         throw error;
     }
 
