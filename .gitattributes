@@ -1,0 +1,14 @@
+# Normalize text files and avoid line-ending warnings on Windows
+* text=auto
+
+# Force CRLF for frontend source files to match Windows checkouts
+*.js text eol=crlf
+*.ts text eol=crlf
+*.tsx text eol=crlf
+*.css text eol=crlf
+*.html text eol=crlf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sql text eol=lf

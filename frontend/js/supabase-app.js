@@ -39,6 +39,13 @@
     postLoading: false,
     reelLoading: false,
     currentCommentPostId: null,
+    suggestionsVisible: false,
+    feedAffinity: {
+      likedCategories: new Set(),
+      likedAuthorIds: new Set(),
+      commentCategories: new Set(),
+      commentAuthorIds: new Set(),
+    },
     realtimeSubscribed: {
       base: false,
       userId: null,
@@ -105,6 +112,8 @@
     dom.homeFeed = document.getElementById('homeFeed');
     dom.homeLoadMore = document.getElementById('homeLoadMore');
     dom.homeEmpty = document.getElementById('homeEmpty');
+    dom.suggestionToggleButton = document.getElementById('suggestionToggleButton');
+    dom.storiesStrip = document.getElementById('storiesStrip');
     dom.reelsFeed = document.getElementById('reelsFeed');
     dom.reelsLoadMore = document.getElementById('reelsLoadMore');
     dom.searchInput = document.getElementById('searchInput');
@@ -618,11 +627,31 @@
 
     if (action === 'toggle-follow' && userId) {
       await toggleFollow(userId, actionButton.dataset.following === 'true');
+      if (state.suggestionsVisible && dom.suggestedAccounts) {
+        await loadSuggestedFollows();
+      }
       return;
     }
 
     if (action === 'refresh-suggestions') {
       loadSuggestedFollows().catch((error) => console.warn(error));
+      return;
+    }
+
+    if (action === 'toggle-suggestions') {
+      state.suggestionsVisible = !state.suggestionsVisible;
+      dom.suggestionToggleButton.textContent = state.suggestionsVisible ? 'Hide suggestions' : 'Show suggestions';
+      await loadSuggestedFollows();
+      return;
+    }
+
+    if (action === 'show-followers' && userId) {
+      await showProfileConnections(userId, 'followers');
+      return;
+    }
+
+    if (action === 'show-following' && userId) {
+      await showProfileConnections(userId, 'following');
       return;
     }
 
@@ -808,6 +837,11 @@
       return;
     }
 
+    if (!state.suggestionsVisible) {
+      dom.suggestedAccounts.hidden = true;
+      return;
+    }
+
     dom.suggestedAccounts.hidden = false;
     dom.suggestedFollowList.innerHTML = '<div class="empty-state">Loading suggested accounts...</div>';
 
@@ -835,8 +869,14 @@
       .in('following_id', profileIds);
 
     const followingSet = new Set((followRows || []).map((item) => item.following_id));
+    const filteredProfiles = profiles.filter((profile) => !followingSet.has(profile.id));
 
-    dom.suggestedFollowList.innerHTML = profiles.map((profile) => {
+    if (!filteredProfiles.length) {
+      dom.suggestedFollowList.innerHTML = '<div class="empty-state">You are following all suggested people.</div>';
+      return;
+    }
+
+    dom.suggestedFollowList.innerHTML = filteredProfiles.map((profile) => {
       const isFollowing = followingSet.has(profile.id);
       return `
         <article class="card suggestion-card">
@@ -994,37 +1034,112 @@
     return !data?.length;
   }
 
-  async function loadHomeFeed(reset) {
-    if (state.postLoading) {
+  async function loadHomeStories() {
+    if (!dom.storiesStrip) {
       return;
     }
 
-    if (reset) {
-      state.posts = [];
+    if (state.authMode !== 'user' || !state.user) {
+      dom.storiesStrip.innerHTML = '<div class="empty-state">Stories appear here after logging in and following creators.</div>';
+      return;
     }
 
-    state.postLoading = true;
-    dom.homeLoadMore.hidden = true;
-    dom.homeEmpty.hidden = true;
-    if (reset || !state.posts.length) {
-      dom.homeFeed.innerHTML = '<div class="empty-state">Loading feed...</div>';
-    }
+    const { data: storyPosts, error } = await supabase
+      .from('posts')
+      .select('user_id, created_at, image_url, media_url, profiles(username, avatar_url)')
+      .order('created_at', { ascending: false })
+      .limit(20);
 
-    const rangeStart = state.posts.length;
-    const rangeEnd = rangeStart + 9;
-    const { data, error } = await selectPostsWithAuthors(rangeStart, rangeEnd);
-
-    state.postLoading = false;
     if (error) {
-      dom.homeFeed.innerHTML = `<div class="empty-state">${escapeHtml(humanizeError(error))}</div>`;
+      dom.storiesStrip.innerHTML = '<div class="empty-state">Unable to load stories.</div>';
       return;
     }
 
-    const newPosts = (data || []).map(normalizePostRecord);
-    state.posts = reset ? newPosts : state.posts.concat(newPosts);
-    await Promise.all([refreshLikedPostsForVisibleFeed(), refreshFollowingForVisibleFeed()]);
-    renderHomeFeed();
-    dom.homeLoadMore.hidden = newPosts.length < 10;
+    const stories = [];
+    const seenUserIds = new Set();
+    for (const post of storyPosts || []) {
+      if (!post.user_id || seenUserIds.has(post.user_id) || post.user_id === state.user.id) {
+        continue;
+      }
+      seenUserIds.add(post.user_id);
+      stories.push(post);
+      if (stories.length >= 8) {
+        break;
+      }
+    }
+
+    if (!stories.length) {
+      dom.storiesStrip.innerHTML = '<div class="empty-state">No stories are available yet. Follow people to see story highlights.</div>';
+      return;
+    }
+
+    dom.storiesStrip.innerHTML = stories.map((story) => {
+      const author = story.profiles || {};
+      return `
+        <button class="story-card" type="button" data-action="view-profile" data-user-id="${escapeHtml(story.user_id)}" data-username="${escapeHtml(author.username || '')}">
+          <img class="avatar story-avatar" src="${escapeHtml(author.avatar_url || DEFAULT_AVATAR)}" alt="${escapeHtml(author.username || 'story')}">
+          <span>${escapeHtml(author.username || 'Story')}</span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  async function loadFeedAffinity() {
+    state.feedAffinity = {
+      likedCategories: new Set(),
+      likedAuthorIds: new Set(),
+      commentCategories: new Set(),
+      commentAuthorIds: new Set(),
+    };
+
+    if (state.authMode !== 'user' || !state.user) {
+      return;
+    }
+
+    const likeRows = await supabase.from('likes').select('post_id').eq('user_id', state.user.id).limit(150);
+    const likedPostIds = (likeRows.data || []).map((row) => row.post_id).filter(Boolean);
+    if (likedPostIds.length) {
+      const likedPosts = await supabase.from('posts').select('id, user_id, category').in('id', likedPostIds).limit(150);
+      (likedPosts.data || []).forEach((post) => {
+        if (post?.category) state.feedAffinity.likedCategories.add(post.category);
+        if (post?.user_id) state.feedAffinity.likedAuthorIds.add(post.user_id);
+      });
+    }
+
+    const commentRows = await supabase.from('comments').select('post_id').eq('user_id', state.user.id).limit(150);
+    const commentedPostIds = (commentRows.data || []).map((row) => row.post_id).filter(Boolean);
+    if (commentedPostIds.length) {
+      const commentedPosts = await supabase.from('posts').select('id, user_id, category').in('id', commentedPostIds).limit(150);
+      (commentedPosts.data || []).forEach((post) => {
+        if (post?.category) state.feedAffinity.commentCategories.add(post.category);
+        if (post?.user_id) state.feedAffinity.commentAuthorIds.add(post.user_id);
+      });
+    }
+  }
+
+  function scoreFeedPosts(posts) {
+    return [...posts].sort((left, right) => {
+      const score = (post) => {
+        let value = 0;
+        if (state.followingUserIds.has(post.user_id)) {
+          value += 100;
+        }
+        if (state.feedAffinity.commentAuthorIds.has(post.user_id) || state.feedAffinity.commentCategories.has(post.category)) {
+          value += 20;
+        }
+        if (state.feedAffinity.likedAuthorIds.has(post.user_id) || state.feedAffinity.likedCategories.has(post.category)) {
+          value += 10;
+        }
+        return value;
+      };
+
+      const a = score(left);
+      const b = score(right);
+      if (a !== b) {
+        return b - a;
+      }
+      return new Date(right.created_at) - new Date(left.created_at);
+    });
   }
 
   async function refreshFollowingForVisibleFeed() {
@@ -1792,10 +1907,10 @@
             <h2 style="margin: 0; font-size: 20px; font-weight: 400;">${escapeHtml(profile.username)}</h2>
             ${isOwner ? '' : profileActionsMarkup}
           </div>
-          <div class="profile-stats-inline" style="margin-bottom: 12px; display: flex; gap: 24px;">
+          <div class="profile-stats-inline" style="margin-bottom: 12px; display: flex; gap: 24px; flex-wrap: wrap;">
+            <button class="ghost-button compact" data-action="show-followers" data-user-id="${escapeHtml(profile.id)}"><strong>${followerCount}</strong> followers</button>
+            <button class="ghost-button compact" data-action="show-following" data-user-id="${escapeHtml(profile.id)}"><strong>${followingCount}</strong> following</button>
             <span><strong>${posts.length}</strong> posts</span>
-            <span><strong>${followerCount}</strong> followers</span>
-            <span><strong>${followingCount}</strong> following</span>
           </div>
           <div class="profile-bio">
             <strong style="display: block;">${escapeHtml(profile.display_name || profile.username)}</strong>
@@ -1849,12 +1964,76 @@
 
     if (state.activeView === 'home') {
       await loadSuggestedFollows();
+      await loadFeedAffinity();
+      state.posts = scoreFeedPosts(state.posts);
       renderHomeFeed();
     }
 
     if (state.activeView === 'search') {
       await handleSearch();
     }
+  }
+
+  async function showProfileConnections(userId, mode) {
+    if (!state.authMode || !state.user) {
+      showToast('Login to view followers and following.', 'info');
+      return;
+    }
+
+    const isFollowers = mode === 'followers';
+    const joinTarget = isFollowers ? 'follower_id' : 'following_id';
+    const matchTarget = isFollowers ? 'following_id' : 'follower_id';
+
+    const { data: connectionRows, error: connectionError } = await supabase
+      .from('follows')
+      .select(`${joinTarget}, ${matchTarget}`)
+      .eq(matchTarget, userId)
+      .order('created_at', { ascending: false });
+
+    if (connectionError) {
+      showToast(humanizeError(connectionError), 'error');
+      return;
+    }
+
+    const connectionIds = (connectionRows || [])
+      .map((row) => row[joinTarget])
+      .filter(Boolean);
+
+    if (!connectionIds.length) {
+      dom.profileGrid.innerHTML = `<div class="empty-state">${isFollowers ? 'No followers yet.' : 'No following users yet.'}</div>`;
+      return;
+    }
+
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .in('id', connectionIds);
+
+    if (profileError) {
+      showToast(humanizeError(profileError), 'error');
+      return;
+    }
+
+    const rows = profiles || [];
+    if (!rows.length) {
+      dom.profileGrid.innerHTML = `<div class="empty-state">${isFollowers ? 'No followers yet.' : 'No following users yet.'}</div>`;
+      return;
+    }
+
+    const content = rows.map((profile) => `
+      <article class="card compact-card search-result-card">
+        <div class="row-between search-result-head">
+          <div>
+            <strong>${escapeHtml(profile.display_name || profile.username || 'member')}</strong>
+            <div class="post-meta">@${escapeHtml(profile.username || 'member')}</div>
+          </div>
+          <button class="secondary-button" type="button" data-action="view-profile" data-user-id="${escapeHtml(profile.id)}" data-username="${escapeHtml(profile.username || '')}">View</button>
+        </div>
+      </article>
+    `).join('');
+
+    dom.profileGrid.innerHTML = content;
+    dom.profileSummary.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function openProfileEditModal() {
