@@ -780,6 +780,83 @@
     window.history.replaceState(null, '', `#${normalizedView}`);
   }
 
+  function updateNotificationBadge(count = 0) {
+    if (!dom.notificationButton) {
+      return;
+    }
+
+    if (count > 0) {
+      dom.notificationButton.dataset.badge = String(count);
+      dom.notificationButton.title = `${count} unread notification${count === 1 ? '' : 's'}`;
+      dom.notificationButton.classList.add('has-badge');
+      return;
+    }
+
+    delete dom.notificationButton.dataset.badge;
+    dom.notificationButton.title = 'Notifications';
+    dom.notificationButton.classList.remove('has-badge');
+  }
+
+  async function loadSuggestedFollows() {
+    if (!dom.suggestedAccounts || !dom.suggestedFollowList) {
+      return;
+    }
+
+    if (state.authMode !== 'user' || !state.user) {
+      dom.suggestedAccounts.hidden = true;
+      return;
+    }
+
+    dom.suggestedAccounts.hidden = false;
+    dom.suggestedFollowList.innerHTML = '<div class="empty-state">Loading suggested accounts...</div>';
+
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .neq('id', state.user.id)
+      .limit(4);
+
+    if (profileError) {
+      dom.suggestedFollowList.innerHTML = '<div class="empty-state">Could not load suggestions.</div>';
+      return;
+    }
+
+    if (!profiles?.length) {
+      dom.suggestedFollowList.innerHTML = '<div class="empty-state">No suggested accounts available right now.</div>';
+      return;
+    }
+
+    const profileIds = profiles.map((profile) => profile.id);
+    const { data: followRows } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', state.user.id)
+      .in('following_id', profileIds);
+
+    const followingSet = new Set((followRows || []).map((item) => item.following_id));
+
+    dom.suggestedFollowList.innerHTML = profiles.map((profile) => {
+      const isFollowing = followingSet.has(profile.id);
+      return `
+        <article class="card suggestion-card">
+          <div class="suggestion-details">
+            <img src="${escapeHtml(profile.avatar_url || DEFAULT_AVATAR)}" alt="${escapeHtml(profile.username)}" class="avatar small">
+            <div>
+              <strong>${escapeHtml(profile.display_name || profile.username)}</strong>
+              <div class="post-meta">@${escapeHtml(profile.username)}</div>
+            </div>
+          </div>
+          <div class="suggestion-actions">
+            <button class="ghost-button compact" data-action="view-profile" data-username="${escapeHtml(profile.username)}" data-user-id="${escapeHtml(profile.id)}">View</button>
+            <button class="secondary-button" data-action="toggle-follow" data-user-id="${escapeHtml(profile.id)}" data-following="${isFollowing}">
+              ${isFollowing ? 'Following' : 'Follow'}
+            </button>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
   function normalizeViewName(viewName) {
     return VIEW_IDS.includes(`${viewName}View`) ? viewName : 'home';
   }
