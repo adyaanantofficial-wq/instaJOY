@@ -454,6 +454,10 @@ button.primary-button::before {
     padding: 1rem;
 }
 
+.post-header .follow-button {
+    margin-left: auto;
+}
+
 .post-author {
     display: flex;
     align-items: center;

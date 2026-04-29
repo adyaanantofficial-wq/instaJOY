@@ -35,6 +35,7 @@
       threads: {},
     },
     likedPostIds: new Set(),
+    followingUserIds: new Set(),
     postLoading: false,
     reelLoading: false,
     currentCommentPostId: null,
@@ -857,6 +858,8 @@
     }).join('');
   }
 
+  window.loadSuggestedFollows = loadSuggestedFollows;
+
   function normalizeViewName(viewName) {
     return VIEW_IDS.includes(`${viewName}View`) ? viewName : 'home';
   }
@@ -1019,9 +1022,30 @@
 
     const newPosts = (data || []).map(normalizePostRecord);
     state.posts = reset ? newPosts : state.posts.concat(newPosts);
-    await refreshLikedPostsForVisibleFeed();
+    await Promise.all([refreshLikedPostsForVisibleFeed(), refreshFollowingForVisibleFeed()]);
     renderHomeFeed();
     dom.homeLoadMore.hidden = newPosts.length < 10;
+  }
+
+  async function refreshFollowingForVisibleFeed() {
+    if (state.authMode !== 'user' || !state.user || !state.posts.length) {
+      state.followingUserIds.clear();
+      return;
+    }
+
+    const authorIds = Array.from(new Set(state.posts.map((post) => normalizePostRecord(post).user_id)));
+    const { data, error } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', state.user.id)
+      .in('following_id', authorIds);
+
+    if (error) {
+      console.warn('Failed to load following status', error.message);
+      return;
+    }
+
+    state.followingUserIds = new Set((data || []).map((item) => item.following_id));
   }
 
   async function refreshLikedPostsForVisibleFeed() {
@@ -1081,6 +1105,7 @@
               <div class="post-meta">${escapeHtml(createdAt)}</div>
             </div>
           </div>
+          ${state.authMode === 'user' && state.user?.id !== author.id ? `<button class="ghost-button compact follow-button" data-action="toggle-follow" data-user-id="${escapeHtml(author.id)}" data-following="${state.followingUserIds.has(author.id)}">${state.followingUserIds.has(author.id) ? 'Following' : 'Follow'}</button>` : ''}
           <button class="ghost-button compact" aria-label="Hide Post" data-action="hide-post" data-post-id="${normalized.id}">✕</button>
         </header>
         
@@ -1237,6 +1262,18 @@
     dom.searchStatus.textContent = state.capabilities.profilesTable === 'missing'
       ? `Found ${posts.length} posts. User profile search is unavailable in this deployment.`
       : `Found ${users.length} users and ${posts.length} posts.`;
+
+    let followingSet = new Set();
+    if (state.authMode === 'user' && state.user && users.length) {
+      const userIds = users.map((user) => user.id);
+      const { data: follows } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', state.user.id)
+        .in('following_id', userIds);
+      followingSet = new Set((follows || []).map((item) => item.following_id));
+    }
+
     dom.userSearchResults.innerHTML = users.length
       ? users.map((user) => {
         const canMessage = state.authMode === 'user' && state.user?.id !== user.id;
@@ -1256,6 +1293,16 @@
                 >
                   Profile
                 </button>
+                ${state.authMode === 'user' && state.user?.id !== user.id ? `
+                  <button
+                    class="secondary-button"
+                    data-action="toggle-follow"
+                    data-user-id="${escapeHtml(user.id)}"
+                    data-following="${followingSet.has(user.id)}"
+                  >
+                    ${followingSet.has(user.id) ? 'Following' : 'Follow'}
+                  </button>
+                ` : ''}
                 ${canMessage ? `
                   <button
                     class="secondary-button"
@@ -1787,6 +1834,14 @@
       return;
     }
 
+    if (state.authMode === 'user' && state.user) {
+      if (isFollowing) {
+        state.followingUserIds.delete(targetUserId);
+      } else {
+        state.followingUserIds.add(targetUserId);
+      }
+    }
+
     showToast(isFollowing ? 'Unfollowed successfully.' : 'Started following user.', 'success');
     if (state.activeView === 'profile') {
       await loadProfile(state.profileUsername, state.profileUserId || targetUserId);
@@ -1794,6 +1849,11 @@
 
     if (state.activeView === 'home') {
       await loadSuggestedFollows();
+      renderHomeFeed();
+    }
+
+    if (state.activeView === 'search') {
+      await handleSearch();
     }
   }
 
