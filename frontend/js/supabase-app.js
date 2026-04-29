@@ -139,6 +139,9 @@
     dom.loginBtn = document.getElementById('loginBtn');
     dom.guestBtn = document.getElementById('guestBtn');
     dom.topbarAction = document.getElementById('topbarAction');
+    dom.notificationButton = document.getElementById('notificationButton');
+    dom.suggestedAccounts = document.getElementById('suggestedAccounts');
+    dom.suggestedFollowList = document.getElementById('suggestedFollowList');
     dom.messagesView = document.getElementById('messagesView');
     dom.messagesRefresh = document.getElementById('messagesRefresh');
     dom.conversationList = document.getElementById('conversationList');
@@ -159,6 +162,7 @@
   function bindEvents() {
     dom.loginBtn?.addEventListener('click', () => showAuthView('login'));
     dom.guestBtn?.addEventListener('click', handleGuestMode);
+    dom.notificationButton?.addEventListener('click', () => handleNav('notifications'));
     dom.topbarAction?.addEventListener('click', handleTopbarAction);
     dom.homeLoadMore?.addEventListener('click', () => loadHomeFeed(false));
     dom.reelsLoadMore?.addEventListener('click', () => loadReelsFeed(false));
@@ -547,7 +551,7 @@
     }
   }
 
-  function handleBodyClick(event) {
+  async function handleBodyClick(event) {
     const authSwitch = event.target.closest('[data-auth-switch]');
     if (authSwitch) {
       state.authPanel = authSwitch.dataset.authSwitch === 'signup' ? 'signup' : 'login';
@@ -600,6 +604,24 @@
 
     if (action === 'share' && postId) {
       sharePost(postId);
+      // Asynchronously log strong intent
+      if (state.authMode === 'user') supabase.rpc('log_interaction', { p_post_id: postId, p_interaction: 'share', p_weight: 2.0 }).catch(()=>{});
+      return;
+    }
+    
+    if (action === 'hide-post' && postId) {
+      if (state.authMode === 'user') supabase.rpc('log_interaction', { p_post_id: postId, p_interaction: 'hide' }).catch(()=>{});
+      showToast('Post hidden. We will show you less of this.', 'success');
+      return;
+    }
+
+    if (action === 'toggle-follow' && userId) {
+      await toggleFollow(userId, actionButton.dataset.following === 'true');
+      return;
+    }
+
+    if (action === 'refresh-suggestions') {
+      loadSuggestedFollows().catch((error) => console.warn(error));
       return;
     }
 
@@ -713,6 +735,9 @@
   async function hydrateActiveView(forceRefresh) {
     if (state.activeView === 'home') {
       await loadHomeFeed(forceRefresh);
+      loadSuggestedFollows().catch((error) => {
+        console.warn('Suggested accounts failed to load', error);
+      });
       return;
     }
 
@@ -979,7 +1004,7 @@
               <div class="post-meta">${escapeHtml(createdAt)}</div>
             </div>
           </div>
-          <button class="ghost-button compact" aria-label="More options">•••</button>
+          <button class="ghost-button compact" aria-label="Hide Post" data-action="hide-post" data-post-id="${normalized.id}">✕</button>
         </header>
         
         ${media}
@@ -1686,7 +1711,13 @@
     }
 
     showToast(isFollowing ? 'Unfollowed successfully.' : 'Started following user.', 'success');
-    await loadProfile(state.profileUsername, state.profileUserId || targetUserId);
+    if (state.activeView === 'profile') {
+      await loadProfile(state.profileUsername, state.profileUserId || targetUserId);
+    }
+
+    if (state.activeView === 'home') {
+      await loadSuggestedFollows();
+    }
   }
 
   function openProfileEditModal() {
@@ -2177,7 +2208,16 @@
   }
 
   async function selectPostsWithAuthors(rangeStart, rangeEnd) {
-    return runPostQueryPlan({ mode: 'feed', rangeStart, rangeEnd });
+    if (state.authMode === 'user' && state.user) {
+      // Use the new Instagram-grade Smart Feed Algorithm
+      const hour = new Date().getHours();
+      const sessionContext = (hour >= 20 || hour <= 4) ? 'night' : 'general';
+      const limit = rangeEnd - rangeStart;
+      
+      const { data, error } = await supabase.rpc('get_smart_feed', { viewer_id: state.user.id, limit_count: limit, offset_count: rangeStart, session_context: sessionContext });
+      if (!error && data) return { data, error: null }; // Fallback to standard if fails
+    }
+    return runPostQueryPlan({ mode: 'feed', limit: rangeEnd - rangeStart, offset: rangeStart });
   }
 
   async function selectSearchedPosts(query) {
@@ -2628,10 +2668,21 @@
 
             if (entry.isIntersecting && entry.intersectionRatio >= 0.72) {
               video.play().catch(() => {});
+              // Track deep watch engagement intent if playing for a while
+              video.dataset.watchStart = Date.now();
               return;
             }
 
             video.pause();
+            if (video.dataset.watchStart && state.authMode === 'user') {
+               const watchedMs = Date.now() - parseInt(video.dataset.watchStart, 10);
+               // If watched more than 5 seconds, log a strong positive signal
+               if (watchedMs > 5000 && video.closest('.post-card')) {
+                 const pid = video.closest('.post-card').dataset.postId;
+                 if (pid) supabase.rpc('log_interaction', { p_post_id: pid, p_interaction: 'watch_full' }).catch(()=>{});
+               }
+               delete video.dataset.watchStart;
+            }
           });
         },
         {

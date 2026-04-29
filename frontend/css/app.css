@@ -199,6 +199,38 @@ video {
     border-bottom: 1px solid rgba(46, 125, 145, 0.12);
 }
 
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.topbar-notification {
+    position: relative;
+    min-width: 46px;
+    min-height: 46px;
+    font-size: 1rem;
+    display: grid;
+    place-items: center;
+}
+
+.topbar-notification[data-badge]:after {
+    content: attr(data-badge);
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}
+
 .brand {
     display: flex;
     align-items: center;
@@ -263,15 +295,15 @@ video {
 }
 
 button[data-action="toggle-like"]::before {
-    content: '👍 ';
+    content: ' ';
 }
 
 button[data-action="comment"]::before {
-    content: '💬 ';
+    content: ' ';
 }
 
 button[data-action="share"]::before {
-    content: '🔗 ';
+    content: ' ';
 }
 
 button[data-action="view-profile"]::before {
@@ -327,17 +359,160 @@ button.primary-button::before {
 
 .view-intro {
     margin-bottom: 1rem;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(224, 245, 255, 0.8));
+    border: 1px solid rgba(46, 125, 145, 0.12);
+    border-radius: var(--radius-lg);
 }
 
 .view-intro h2 {
     margin: 0 0 0.25rem;
-    font-size: 1.4rem;
+    font-size: 1.45rem;
+    letter-spacing: 0.02em;
 }
 
 .view-intro p,
 .status-text {
     margin: 0;
     color: var(--subtext);
+    line-height: 1.6;
+}
+
+.suggested-accounts {
+    margin-bottom: 1.2rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(46, 125, 145, 0.1);
+    border-radius: var(--radius-lg);
+}
+
+.suggested-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.suggested-header h3 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.suggested-header p {
+    margin: 0.25rem 0 0;
+    color: var(--subtext);
+    font-size: 0.9rem;
+}
+
+.suggested-list {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.suggestion-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    border-radius: var(--radius-md);
+    background: rgba(245, 251, 255, 0.95);
+    border: 1px solid rgba(46, 125, 145, 0.12);
+}
+
+.suggestion-details {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.suggestion-details .avatar.small {
+    width: 42px;
+    height: 42px;
+}
+
+.suggestion-actions {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.post-card {
+    overflow: hidden;
+    border-radius: 28px;
+    border-color: rgba(46, 125, 145, 0.1);
+}
+
+.post-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.post-author {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.post-author strong {
+    display: block;
+    font-size: 0.98rem;
+}
+
+.post-meta {
+    color: var(--subtext);
+    font-size: 0.82rem;
+}
+
+.post-image,
+.reel-video {
+    width: 100%;
+    max-height: 560px;
+    object-fit: cover;
+    border-top: 1px solid rgba(46, 125, 145, 0.08);
+}
+
+.post-body {
+    padding: 1rem;
+    color: var(--text);
+    line-height: 1.7;
+}
+
+.post-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem 1rem;
+    border-top: 1px solid rgba(46, 125, 145, 0.08);
+}
+
+.action-button {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(46, 125, 145, 0.12);
+    color: var(--accent-deep);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.action-button.liked {
+    background: rgba(237, 73, 86, 0.14);
+    color: #ed4956;
+}
+
+.notification-unread {
+    border-color: rgba(244, 106, 59, 0.25) !important;
+    box-shadow: inset 0 0 0 1px rgba(244, 106, 59, 0.12);
 }
 
 .stack-list {
@@ -938,7 +1113,7 @@ select:focus {
     bottom: 0;
     z-index: 20;
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0.35rem;
     padding: 0.6rem 0.6rem calc(0.6rem + env(safe-area-inset-bottom));
     background: rgba(255, 251, 246, 0.95);

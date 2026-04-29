@@ -40,7 +40,10 @@
                     <div id="brandSubtitle" class="brand-subtitle">Home</div>
                 </div>
             </div>
-            <button id="topbarAction" class="ghost-button" type="button">Refresh</button>
+            <div class="topbar-actions">
+                <button id="notificationButton" class="ghost-button compact topbar-notification" type="button" aria-label="Notifications">🔔</button>
+                <button id="topbarAction" class="ghost-button" type="button">Refresh</button>
+            </div>
         </header>
 
         <main class="main-shell">
@@ -48,9 +51,19 @@
 
             <section id="homeView" class="view" hidden>
                 <div class="view-intro">
-                    <h2>Fresh joy</h2>
-                    <p>Newest posts from people you follow, with a global fallback so the feed never feels empty.</p>
+                    <h2>Home feed</h2>
+                    <p>Keep your feed polished, focused, and easy to scan with suggested accounts and curated moments.</p>
                 </div>
+                <section id="suggestedAccounts" class="suggested-accounts" hidden>
+                    <div class="suggested-header">
+                        <div>
+                            <h3>Suggested accounts</h3>
+                            <p>Follow popular creators and close-by friends to shape a more personalized experience.</p>
+                        </div>
+                        <button class="ghost-button compact" type="button" data-action="refresh-suggestions">Refresh</button>
+                    </div>
+                    <div id="suggestedFollowList" class="suggested-list"></div>
+                </section>
                 <div id="homeFeed" class="stack-list"></div>
                 <button id="homeLoadMore" class="load-more" type="button" hidden>Load more posts</button>
                 <div id="homeEmpty" class="empty-state" hidden></div>
@@ -155,9 +168,6 @@
             </button>
             <button class="nav-button" type="button" data-view="search">
                 <span>🔍Search</span>
-            </button>
-            <button class="nav-button" type="button" data-view="notifications">
-                <span>🔔</span>
             </button>
             <button class="nav-button nav-create" id="openCreateButton" type="button">
                 <span>➕Post</span>
