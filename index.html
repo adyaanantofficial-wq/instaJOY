@@ -299,6 +299,17 @@
     <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-messaging-compat.js"></script>
     <script src="frontend/js/firebaseClient.js"></script>
+        <script>
+            // Safety stub: some legacy scripts may call `loadHomeFeed` before
+            // the main app attaches it. Provide a no-op placeholder to avoid
+            // "is not defined" runtime errors until the real function loads.
+            if (typeof window.loadHomeFeed === 'undefined') {
+                window.loadHomeFeed = function (/* reset */) {
+                    // Intentionally empty; real implementation will replace this.
+                    console.debug('loadHomeFeed stub called before app initialization');
+                };
+            }
+        </script>
     <script src="frontend/js/supabase-app.js"></script>
 </body>
 </html>
