@@ -365,6 +365,57 @@ button.primary-button::before {
     border-radius: var(--radius-lg);
 }
 
+.home-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    gap: 1.4rem;
+}
+
+.home-left,
+.home-right {
+    display: grid;
+    gap: 1rem;
+}
+
+.home-right {
+    position: sticky;
+    top: 1rem;
+    align-self: start;
+}
+
+.home-feed-panel,
+.suggested-accounts {
+    display: grid;
+    gap: 1rem;
+}
+
+.home-intro {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.section-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.section-header .subtext {
+    margin: 0;
+    color: var(--subtext);
+    font-size: 0.94rem;
+}
+
 .view-intro h2 {
     margin: 0 0 0.25rem;
     font-size: 1.45rem;
@@ -411,31 +462,52 @@ button.primary-button::before {
 }
 
 .stories-strip {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: 0.9rem;
+    display: flex;
+    gap: 0.95rem;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
     margin-bottom: 1.2rem;
+    scroll-snap-type: x mandatory;
+}
+
+.stories-strip::-webkit-scrollbar {
+    height: 8px;
+}
+
+.stories-strip::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.stories-strip::-webkit-scrollbar-thumb {
+    background: rgba(46, 125, 145, 0.18);
+    border-radius: 999px;
 }
 
 .story-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.55rem;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(46, 125, 145, 0.12);
+    gap: 0.58rem;
+    border-radius: 30px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(235, 245, 252, 0.96));
+    border: 1px solid rgba(46, 125, 145, 0.14);
+    box-shadow: 0 20px 50px rgba(13, 30, 64, 0.06);
     padding: 0.85rem;
-    min-height: 120px;
+    min-width: 120px;
+    min-height: 140px;
     text-align: center;
+    scroll-snap-align: start;
 }
 
 .story-avatar {
-    width: 54px;
-    height: 54px;
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
-    border: 2px solid rgba(31, 143, 174, 0.22);
+    padding: 3px;
+    background: linear-gradient(135deg, #fe8a71 0%, #fbbf70 30%, #d86eff 65%, #54d2ff 100%);
+    box-shadow: 0 8px 25px rgba(92, 43, 123, 0.12);
     object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.92);
 }
 
 .suggestion-card {
@@ -1283,6 +1355,10 @@ select:focus {
         padding-top: 1.2rem;
     }
 
+    .home-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    }
+
     .search-columns {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1306,6 +1382,17 @@ select:focus {
 
     .message-thread {
         max-height: 60vh;
+    }
+}
+
+@media (max-width: 1024px) {
+    .home-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .home-right {
+        position: static;
+        top: auto;
     }
 }
 

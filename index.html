@@ -50,25 +50,39 @@
             <section id="authView" class="view auth-view"></section>
 
             <section id="homeView" class="view" hidden>
-                <div class="view-intro">
-                    <h2>Stories</h2>
-                    <p>Quick highlight bubbles from creators and followers. Tap a story to open that profile fast.</p>
-                    <button id="suggestionToggleButton" class="secondary-button" type="button" data-action="toggle-suggestions">Show suggestions</button>
-                </div>
-                <section id="storiesStrip" class="stories-strip"></section>
-                <section id="suggestedAccounts" class="suggested-accounts" hidden>
-                    <div class="suggested-header">
-                        <div>
-                            <h3>Suggested accounts</h3>
-                            <p>Follow popular creators and close-by friends to shape a more personalized experience.</p>
+                <div class="home-grid">
+                    <div class="home-left">
+                        <div class="view-intro home-intro">
+                            <div>
+                                <h2>Stories</h2>
+                                <p>Quick highlight bubbles from creators and followers. Tap a story to open that profile fast.</p>
+                            </div>
+                            <button id="suggestionToggleButton" class="secondary-button" type="button" data-action="toggle-suggestions">Show suggestions</button>
                         </div>
-                        <button class="ghost-button compact" type="button" data-action="refresh-suggestions">Refresh</button>
+                        <section id="storiesStrip" class="stories-strip"></section>
+                        <div class="home-feed-panel">
+                            <div class="section-header">
+                                <h3>Your feed</h3>
+                                <p class="subtext">Recommended posts sorted by who you follow, then related comments, then liked content.</p>
+                            </div>
+                            <div id="homeFeed" class="stack-list"></div>
+                            <button id="homeLoadMore" class="load-more" type="button" hidden>Load more posts</button>
+                            <div id="homeEmpty" class="empty-state" hidden></div>
+                        </div>
                     </div>
-                    <div id="suggestedFollowList" class="suggested-list"></div>
-                </section>
-                <div id="homeFeed" class="stack-list"></div>
-                <button id="homeLoadMore" class="load-more" type="button" hidden>Load more posts</button>
-                <div id="homeEmpty" class="empty-state" hidden></div>
+                    <aside class="home-right">
+                        <section id="suggestedAccounts" class="suggested-accounts" hidden>
+                            <div class="suggested-header">
+                                <div>
+                                    <h3>Suggested for you</h3>
+                                    <p>Follow accounts that match your interests.</p>
+                                </div>
+                                <button class="ghost-button compact" type="button" data-action="refresh-suggestions">Refresh</button>
+                            </div>
+                            <div id="suggestedFollowList" class="suggested-list"></div>
+                        </section>
+                    </aside>
+                </div>
             </section>
 
             <section id="reelsView" class="view" hidden>

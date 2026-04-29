@@ -899,6 +899,9 @@
   }
 
   window.loadSuggestedFollows = loadSuggestedFollows;
+  window.loadHomeFeed = loadHomeFeed;
+  window.renderHomeFeed = renderHomeFeed;
+  window.showProfileConnections = showProfileConnections;
 
   function normalizeViewName(viewName) {
     return VIEW_IDS.includes(`${viewName}View`) ? viewName : 'home';
@@ -1044,28 +1047,61 @@
       return;
     }
 
-    const { data: storyPosts, error } = await supabase
+    let storyPosts = [];
+    let error = null;
+
+    const relationResult = await supabase
       .from('posts')
       .select('user_id, created_at, image_url, media_url, profiles(username, avatar_url)')
       .order('created_at', { ascending: false })
       .limit(20);
 
-    if (error) {
+    if (!relationResult.error) {
+      storyPosts = relationResult.data || [];
+    } else {
+      const fallbackResult = await supabase
+        .from('posts')
+        .select('user_id, created_at, image_url, media_url')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      storyPosts = fallbackResult.data || [];
+      error = fallbackResult.error || relationResult.error;
+    }
+
+    if (error && !storyPosts.length) {
       dom.storiesStrip.innerHTML = '<div class="empty-state">Unable to load stories.</div>';
       return;
     }
 
     const stories = [];
+    const userIds = [];
     const seenUserIds = new Set();
-    for (const post of storyPosts || []) {
+    for (const post of storyPosts) {
       if (!post.user_id || seenUserIds.has(post.user_id) || post.user_id === state.user.id) {
         continue;
       }
       seenUserIds.add(post.user_id);
+      userIds.push(post.user_id);
       stories.push(post);
       if (stories.length >= 8) {
         break;
       }
+    }
+
+    if (!stories.length) {
+      dom.storiesStrip.innerHTML = '<div class="empty-state">No stories are available yet. Follow people to see story highlights.</div>';
+      return;
+    }
+
+    if (!stories[0].profiles?.username && userIds.length) {
+      const { data: profileRows } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', userIds);
+      const profileMap = new Map((profileRows || []).map((profile) => [profile.id, profile]));
+      stories.forEach((story) => {
+        story.profiles = profileMap.get(story.user_id) || {};
+      });
     }
 
     if (!stories.length) {
