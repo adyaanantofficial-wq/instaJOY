@@ -1,17 +1,17 @@
 :root {
-    --shell-bg: #fff8ef;
-    --surface: rgba(255, 255, 255, 0.92);
+    --shell-bg: #edf8ff;
+    --surface: rgba(255, 255, 255, 0.95);
     --surface-strong: #ffffff;
-    --surface-muted: #fff2df;
-    --line: rgba(141, 80, 36, 0.14);
-    --text: #2b1b11;
-    --subtext: #6e5444;
-    --accent: #f46a3b;
-    --accent-deep: #d94a1b;
-    --accent-soft: #ffd7be;
-    --success: #2c9c5d;
-    --danger: #c63a20;
-    --shadow: 0 18px 40px rgba(155, 77, 24, 0.08);
+    --surface-muted: rgba(225, 245, 255, 0.92);
+    --line: rgba(46, 125, 145, 0.16);
+    --text: #102f44;
+    --subtext: #4b6f86;
+    --accent: #1f8fae;
+    --accent-deep: #165e76;
+    --accent-soft: #c3eef4;
+    --success: #1b9a70;
+    --danger: #c7413f;
+    --shadow: 0 18px 40px rgba(14, 67, 92, 0.09);
     --radius-lg: 24px;
     --radius-md: 18px;
     --radius-sm: 14px;
@@ -32,9 +32,9 @@ body {
     font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
     color: var(--text);
     background:
-        radial-gradient(circle at top left, rgba(255, 184, 119, 0.28), transparent 30%),
-        radial-gradient(circle at right 20%, rgba(244, 106, 59, 0.2), transparent 24%),
-        linear-gradient(180deg, #fff4e4 0%, #fffaf4 48%, #fffefb 100%);
+        radial-gradient(circle at top left, rgba(45, 143, 174, 0.16), transparent 25%),
+        radial-gradient(circle at right 20%, rgba(29, 136, 203, 0.14), transparent 28%),
+        linear-gradient(180deg, #f4fbff 0%, #edf8ff 48%, #f8fdff 100%);
 }
 
 button,
@@ -194,9 +194,9 @@ video {
     justify-content: space-between;
     gap: 1rem;
     padding: 0.95rem 1rem;
-    background: rgba(255, 251, 246, 0.92);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(232, 248, 255, 0.92));
     backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid rgba(46, 125, 145, 0.12);
 }
 
 .brand {
@@ -232,7 +232,7 @@ video {
 .chip-button,
 .text-button {
     border-radius: 999px;
-    transition: transform 160ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease;
+    transition: transform 160ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease, box-shadow 160ms ease;
 }
 
 .ghost-button {
@@ -249,17 +249,37 @@ video {
 .primary-button,
 .load-more {
     padding: 0.85rem 1.1rem;
-    background: linear-gradient(135deg, var(--accent), #ff8c56);
+    background: linear-gradient(135deg, #2ea3b8, #1f8fae);
     color: #fff;
     font-weight: 700;
-    box-shadow: 0 10px 24px rgba(244, 106, 59, 0.25);
+    box-shadow: 0 12px 24px rgba(30, 80, 110, 0.16);
 }
 
 .secondary-button {
     padding: 0.8rem 1rem;
-    background: var(--surface-muted);
+    background: rgba(225, 245, 255, 0.95);
     color: var(--accent-deep);
-    border: 1px solid rgba(244, 106, 59, 0.16);
+    border: 1px solid rgba(46, 125, 145, 0.16);
+}
+
+button[data-action="toggle-like"]::before {
+    content: '👍 ';
+}
+
+button[data-action="comment"]::before {
+    content: '💬 ';
+}
+
+button[data-action="view-profile"]::before {
+    content: '👤 ';
+}
+
+button.load-more::before {
+    content: '⬇️ ';
+}
+
+button.primary-button::before {
+    content: '✨ ';
 }
 
 .text-button {
@@ -276,6 +296,7 @@ video {
 .tab-button:hover,
 .nav-button:hover {
     transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(30, 80, 110, 0.12);
 }
 
 .main-shell {
@@ -338,7 +359,7 @@ video {
 .profile-summary,
 .auth-card {
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: 1px solid rgba(46, 125, 145, 0.12);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
 }
@@ -450,8 +471,8 @@ textarea {
 textarea:focus,
 input:focus,
 select:focus {
-    outline: 2px solid rgba(244, 106, 59, 0.22);
-    border-color: rgba(244, 106, 59, 0.55);
+    outline: 2px solid rgba(31, 143, 174, 0.22);
+    border-color: rgba(31, 143, 174, 0.55);
 }
 
 .auth-switch {
@@ -502,10 +523,10 @@ select:focus {
 .post-chip {
     display: inline-flex;
     margin: 0 1rem 0.85rem;
-    padding: 0.34rem 0.68rem;
+    padding: 0.38rem 0.8rem;
     border-radius: 999px;
-    background: rgba(255, 215, 190, 0.88);
-    color: var(--accent-deep);
+    background: rgba(31, 143, 174, 0.14);
+    color: #106a7c;
     font-size: 0.76rem;
     font-weight: 700;
     text-transform: capitalize;
