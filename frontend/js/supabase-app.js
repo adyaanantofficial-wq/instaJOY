@@ -10,6 +10,8 @@
   const DEFAULT_AVATAR = config.DEFAULT_AVATAR || 'ilogo.png';
   const MAX_IMAGE_BYTES = 200 * 1024;
   const MAX_REEL_BYTES = 1024 * 1024;
+  const MAX_REEL_DURATION_SECONDS = 30;
+  const MAX_AVATAR_BYTES = 180 * 1024;
   const VIEW_IDS = ['authView', 'homeView', 'reelsView', 'messagesView', 'searchView', 'notificationsView', 'profileView'];
 
   const state = {
@@ -27,14 +29,28 @@
     },
     posts: [],
     reels: [],
+    messages: {
+      conversations: [],
+      activeUser: null,
+      threads: {},
+    },
     likedPostIds: new Set(),
     postLoading: false,
     reelLoading: false,
     currentCommentPostId: null,
-    realtimeSubscribed: false,
+    realtimeSubscribed: {
+      base: false,
+      userId: null,
+    },
+    previewUrls: {
+      image: '',
+      reel: '',
+      avatar: '',
+    },
   };
 
   const dom = {};
+  let videoObserver = null;
 
   document.addEventListener('DOMContentLoaded', init);
 
@@ -47,6 +63,26 @@
       showToast('Supabase is not configured correctly. Check frontend/js/config.js.', 'error');
       return;
     }
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      window.setTimeout(() => {
+        handleAuthStateChange(session).catch((error) => {
+          console.error(error);
+          showToast(humanizeError(error), 'error');
+        });
+      }, 0);
+    });
+
+    window.addEventListener('hashchange', () => {
+      if (state.authMode === 'landing') {
+        return;
+      }
+
+      const requestedView = normalizeViewName(window.location.hash.replace(/^#/, ''));
+      if (requestedView !== state.activeView) {
+        handleNav(requestedView);
+      }
+    });
 
     try {
       await restoreSession();
@@ -104,7 +140,20 @@
     dom.guestBtn = document.getElementById('guestBtn');
     dom.topbarAction = document.getElementById('topbarAction');
     dom.messagesView = document.getElementById('messagesView');
+    dom.messagesRefresh = document.getElementById('messagesRefresh');
+    dom.conversationList = document.getElementById('conversationList');
+    dom.messageThread = document.getElementById('messageThread');
+    dom.chatHeader = document.getElementById('chatHeader');
+    dom.chatBackButton = document.getElementById('chatBackButton');
+    dom.messageComposer = document.getElementById('messageComposer');
+    dom.messageInput = document.getElementById('messageInput');
     dom.markAllNotifications = document.getElementById('markAllNotifications');
+    dom.profileEditModal = document.getElementById('profileEditModal');
+    dom.profileEditForm = document.getElementById('profileEditForm');
+    dom.profileBioInput = document.getElementById('profileBioInput');
+    dom.profileImageInput = document.getElementById('profileImageInput');
+    dom.profileImagePreview = document.getElementById('profileImagePreview');
+    dom.removeProfileImage = document.getElementById('removeProfileImage');
   }
 
   function bindEvents() {
@@ -120,9 +169,18 @@
     dom.reelInput?.addEventListener('change', handleReelSelection);
     dom.commentForm?.addEventListener('submit', handleCommentSubmit);
     dom.markAllNotifications?.addEventListener('click', markAllNotificationsRead);
+    dom.messagesRefresh?.addEventListener('click', () => loadConversations(true));
+    dom.messageComposer?.addEventListener('submit', handleMessageSubmit);
+    dom.chatBackButton?.addEventListener('click', () => {
+      state.messages.activeUser = null;
+      renderConversations();
+      renderActiveConversation();
+    });
     dom.profileRefresh?.addEventListener('click', () => {
       loadProfile(state.profileUsername || state.profile?.username || null, state.profileUserId || state.user?.id || null);
     });
+    dom.profileEditForm?.addEventListener('submit', handleProfileEditSubmit);
+    dom.profileImageInput?.addEventListener('change', handleProfileImageSelection);
 
     document.querySelectorAll('.nav-button[data-view]').forEach((button) => {
       button.addEventListener('click', () => handleNav(button.dataset.view));
@@ -163,6 +221,32 @@
     setLandingMode();
   }
 
+  async function handleAuthStateChange(session) {
+    const user = session?.user || null;
+
+    if (!user) {
+      if (state.authMode === 'guest') {
+        return;
+      }
+
+      setLandingMode();
+      showLanding();
+      return;
+    }
+
+    state.authMode = 'user';
+    state.user = user;
+    sessionStorage.setItem(AUTH_STORAGE_KEY, 'user');
+    clearLegacyGuestFlag();
+    const profileResult = await ensureCurrentUserProfile();
+    if (!profileResult.ok) {
+      showToast(profileResult.message, 'error');
+    }
+    await attemptRegisterFcmToken();
+    await renderApp();
+    await subscribeRealtime();
+  }
+
   async function renderApp() {
     if (state.authMode === 'landing') {
       showLanding();
@@ -176,8 +260,8 @@
 
     updateWriteAccessUi();
     updateTopbarAction();
-    renderView('home');
-    await loadHomeFeed(true);
+    renderView(normalizeViewName(window.location.hash.replace(/^#/, '')));
+    await hydrateActiveView(true);
   }
 
   function showLanding() {
@@ -419,7 +503,45 @@
       return;
     }
 
-    if (state.authMode === 'user') {
+    if (state.activeView === 'search') {
+      if (dom.searchInput) {
+        dom.searchInput.value = '';
+      }
+      renderSearchPlaceholder();
+      return;
+    }
+
+    if (state.activeView === 'notifications') {
+      await markAllNotificationsRead();
+      return;
+    }
+
+    if (state.activeView === 'messages') {
+      await loadConversations(true);
+      return;
+    }
+
+    if (state.activeView === 'profile' && state.user?.id === state.profileUserId) {
+      openProfileEditModal();
+      return;
+    }
+
+    if (state.authMode === 'user' && state.activeView === 'profile' && state.user?.id !== state.profileUserId) {
+      await loadProfile(state.profileUsername, state.profileUserId);
+      return;
+    }
+
+    if (state.activeView === 'reels') {
+      await loadReelsFeed(true);
+      return;
+    }
+
+    if (state.activeView === 'home') {
+      await loadHomeFeed(true);
+      return;
+    }
+
+    if (state.authMode === 'user' && state.activeView === 'landing') {
       await logoutUser();
     }
   }
@@ -449,10 +571,17 @@
       return;
     }
 
-    const { action, username, postId } = actionButton.dataset;
+    const {
+      action,
+      username,
+      postId,
+      userId,
+      avatarUrl,
+      displayName,
+    } = actionButton.dataset;
     if (action === 'view-profile') {
       state.profileUsername = username || null;
-      state.profileUserId = actionButton.dataset.userId || null;
+      state.profileUserId = userId || null;
       renderView('profile');
       loadProfile(state.profileUsername, state.profileUserId);
       return;
@@ -465,43 +594,43 @@
 
     if (action === 'comment' && postId) {
       openCommentsModal(postId);
+      return;
+    }
+
+    if (action === 'message-user' && userId) {
+      openConversation({
+        id: userId,
+        username: username || 'member',
+        avatar_url: avatarUrl || DEFAULT_AVATAR,
+        display_name: displayName || username || 'member',
+      });
+      return;
+    }
+
+    if (action === 'logout') {
+      logoutUser();
     }
   }
 
-  function handleNav(viewName) {
+  async function handleNav(viewName) {
     renderView(viewName);
-
-    if (viewName === 'home') {
-      loadHomeFeed(true);
-    } else if (viewName === 'reels') {
-      loadReelsFeed(true);
-    } else if (viewName === 'search') {
-      renderSearchPlaceholder();
-    } else if (viewName === 'notifications') {
-      loadNotifications();
-    } else if (viewName === 'profile') {
-      if (state.authMode === 'user' && state.user) {
-        state.profileUserId = state.profileUserId || state.user.id;
-        state.profileUsername = state.profileUsername || state.profile?.username || state.user?.user_metadata?.username || null;
-      }
-      loadProfile(state.profileUsername || state.profile?.username || null, state.profileUserId || state.user?.id || null);
-    } else if (viewName === 'messages') {
-      renderMessagesView();
-    }
+    await hydrateActiveView(true);
   }
 
   function renderView(viewName) {
-    state.activeView = viewName;
-    dom.brandSubtitle.textContent = getViewSubtitle(viewName);
+    const normalizedView = normalizeViewName(viewName);
+    state.activeView = normalizedView;
+    dom.brandSubtitle.textContent = getViewSubtitle(normalizedView);
     VIEW_IDS.forEach((id) => {
       const element = document.getElementById(id);
       if (element) {
-        element.hidden = id !== `${viewName}View`;
+        element.hidden = id !== `${normalizedView}View`;
       }
     });
     document.querySelectorAll('.nav-button[data-view]').forEach((button) => {
-      button.classList.toggle('active', button.dataset.view === viewName);
+      button.classList.toggle('active', button.dataset.view === normalizedView);
     });
+    syncHash(normalizedView);
     updateTopbarAction();
     updateWriteAccessUi();
   }
@@ -511,7 +640,7 @@
     dom.appShell.hidden = false;
     dom.bottomNav.hidden = false;
     renderView(viewName || 'home');
-    await loadHomeFeed(true);
+    await hydrateActiveView(true);
   }
 
   async function logoutUser() {
@@ -534,10 +663,67 @@
     state.profileUserId = null;
     state.posts = [];
     state.reels = [];
+    state.messages = {
+      conversations: [],
+      activeUser: null,
+      threads: {},
+    };
     state.likedPostIds.clear();
     sessionStorage.removeItem(AUTH_STORAGE_KEY);
     sessionStorage.removeItem(PENDING_PROFILE_KEY);
     clearLegacyGuestFlag();
+    clearPreviewUrl('image');
+    clearPreviewUrl('reel');
+    clearPreviewUrl('avatar');
+  }
+
+  async function hydrateActiveView(forceRefresh) {
+    if (state.activeView === 'home') {
+      await loadHomeFeed(forceRefresh);
+      return;
+    }
+
+    if (state.activeView === 'reels') {
+      await loadReelsFeed(forceRefresh);
+      return;
+    }
+
+    if (state.activeView === 'search') {
+      renderSearchPlaceholder();
+      return;
+    }
+
+    if (state.activeView === 'notifications') {
+      await loadNotifications();
+      return;
+    }
+
+    if (state.activeView === 'profile') {
+      if (state.authMode === 'user' && state.user) {
+        state.profileUserId = state.profileUserId || state.user.id;
+        state.profileUsername = state.profileUsername || state.profile?.username || state.user?.user_metadata?.username || null;
+      }
+      await loadProfile(state.profileUsername || state.profile?.username || null, state.profileUserId || state.user?.id || null);
+      return;
+    }
+
+    if (state.activeView === 'messages') {
+      await loadConversations(forceRefresh);
+    }
+  }
+
+  function syncHash(viewName) {
+    const normalizedView = normalizeViewName(viewName);
+    if (normalizedView === 'home') {
+      window.history.replaceState(null, '', '#home');
+      return;
+    }
+
+    window.history.replaceState(null, '', `#${normalizedView}`);
+  }
+
+  function normalizeViewName(viewName) {
+    return VIEW_IDS.includes(`${viewName}View`) ? viewName : 'home';
   }
 
   function clearLegacyGuestFlag() {
@@ -735,6 +921,7 @@
     }
 
     dom.homeFeed.innerHTML = state.posts.map((post) => renderPostCard(post)).join('');
+    prepareAutoPlayVideos(dom.homeFeed);
   }
 
   function renderPostCard(post) {
@@ -745,8 +932,8 @@
     const likeDisabled = state.authMode !== 'user';
     const copy = normalized.type === 'text' ? normalized.content || normalized.caption || '' : normalized.caption || normalized.content || '';
     const media = normalized.type === 'reel'
-      ? (normalized.media_url ? `<video controls preload="metadata" src="${escapeHtml(normalized.media_url)}" class="post-image"></video>` : '')
-      : (normalized.image_url ? `<img src="${escapeHtml(normalized.image_url)}" alt="Post image" loading="lazy" class="post-image">` : '');
+      ? (normalized.media_url ? `<video controls preload="metadata" muted loop playsinline data-auto-play-video src="${escapeHtml(normalized.media_url)}" class="post-image reel-video"></video>` : '')
+      : (normalized.image_url ? `<img src="${escapeHtml(normalized.image_url)}" alt="Post image" loading="lazy" decoding="async" class="post-image">` : '');
 
     return `
       <article class="card post-card">
@@ -879,7 +1066,7 @@
 
     dom.searchStatus.textContent = 'Searching...';
     const [usersResult, postsResult] = await Promise.all([
-      supabase.from('profiles').select('id, username, avatar_url').ilike('username', `%${query}%`).limit(15),
+      supabase.from('profiles').select('id, username, display_name, avatar_url').ilike('username', `%${query}%`).limit(15),
       selectSearchedPosts(query),
     ]);
 
@@ -900,7 +1087,41 @@
       ? `Found ${posts.length} posts. User profile search is unavailable in this deployment.`
       : `Found ${users.length} users and ${posts.length} posts.`;
     dom.userSearchResults.innerHTML = users.length
-      ? users.map((user) => `<article class="card compact-card"><button class="ghost-button" data-action="view-profile" data-username="${escapeHtml(user.username)}">${escapeHtml(user.username)}</button></article>`).join('')
+      ? users.map((user) => {
+        const canMessage = state.authMode === 'user' && state.user?.id !== user.id;
+        return `
+          <article class="card compact-card search-result-card">
+            <div class="row-between search-result-head">
+              <div>
+                <strong>${escapeHtml(user.display_name || user.username)}</strong>
+                <div class="post-meta">@${escapeHtml(user.username)}</div>
+              </div>
+              <div class="search-actions">
+                <button
+                  class="ghost-button compact"
+                  data-action="view-profile"
+                  data-username="${escapeHtml(user.username)}"
+                  data-user-id="${escapeHtml(user.id)}"
+                >
+                  Profile
+                </button>
+                ${canMessage ? `
+                  <button
+                    class="secondary-button"
+                    data-action="message-user"
+                    data-user-id="${escapeHtml(user.id)}"
+                    data-username="${escapeHtml(user.username)}"
+                    data-display-name="${escapeHtml(user.display_name || user.username)}"
+                    data-avatar-url="${escapeHtml(user.avatar_url || DEFAULT_AVATAR)}"
+                  >
+                    Message
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('')
       : `<div class="empty-state">${state.capabilities.profilesTable === 'missing' ? 'Profile search is unavailable until the profiles table exists.' : 'No matching users yet.'}</div>`;
     dom.postSearchResults.innerHTML = posts.length
       ? posts.map((post) => renderPostCard(post)).join('')
@@ -936,6 +1157,7 @@
     }
 
     dom.reelsFeed.innerHTML = state.reels.map(renderReelCard).join('');
+    prepareAutoPlayVideos(dom.reelsFeed);
   }
 
   function renderReelCard(reel) {
@@ -949,7 +1171,7 @@
             <div class="post-meta">${escapeHtml(new Date(normalized.created_at).toLocaleString())}</div>
           </div>
         </header>
-        ${normalized.media_url ? `<video controls preload="metadata" src="${escapeHtml(normalized.media_url)}" class="reel-video"></video>` : ''}
+        ${normalized.media_url ? `<video controls preload="metadata" muted loop playsinline data-auto-play-video src="${escapeHtml(normalized.media_url)}" class="reel-video"></video>` : ''}
         <div class="post-body">${escapeHtml(normalized.caption || normalized.content || '')}</div>
       </article>
     `;
@@ -1003,12 +1225,256 @@
   }
 
   function renderMessagesView() {
-    if (state.authMode !== 'user' || !state.user) {
-      dom.messagesView.innerHTML = '<div class="empty-state">Messages require login. Use Login to access chat.</div>';
+    if (!dom.conversationList || !dom.messageThread || !dom.messageComposer || !dom.chatHeader) {
       return;
     }
 
-    dom.messagesView.innerHTML = '<div class="empty-state">Messaging is not available in this deployment yet. Feed, search, comments, and profile browsing still work.</div>';
+    if (state.authMode !== 'user' || !state.user) {
+      dom.conversationList.innerHTML = '<div class="empty-state">Messages require login. Use Login to access chat.</div>';
+      dom.messageThread.innerHTML = '<div class="empty-state">Log in to read and send direct messages.</div>';
+      dom.messageComposer.hidden = true;
+      dom.chatBackButton.hidden = true;
+      dom.chatHeader.querySelector('h3').textContent = 'Messages';
+      return;
+    }
+
+    renderConversations();
+    renderActiveConversation();
+  }
+
+  async function loadConversations(forceRefresh) {
+    if (state.authMode !== 'user' || !state.user) {
+      renderMessagesView();
+      return;
+    }
+
+    if (!forceRefresh && state.messages.conversations.length) {
+      renderMessagesView();
+      return;
+    }
+
+    dom.conversationList.innerHTML = '<div class="empty-state">Loading conversations...</div>';
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, sender_id, receiver_id, body, read_at, created_at')
+      .or(`sender_id.eq.${state.user.id},receiver_id.eq.${state.user.id}`)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) {
+      dom.conversationList.innerHTML = `<div class="empty-state">${escapeHtml(humanizeError(error))}</div>`;
+      dom.messageThread.innerHTML = '<div class="empty-state">Messages are unavailable right now.</div>';
+      dom.messageComposer.hidden = true;
+      return;
+    }
+
+    const byUser = new Map();
+    const otherUserIds = new Set();
+
+    (data || []).forEach((message) => {
+      const otherUserId = message.sender_id === state.user.id ? message.receiver_id : message.sender_id;
+      otherUserIds.add(otherUserId);
+      const existing = byUser.get(otherUserId);
+
+      if (!existing) {
+        byUser.set(otherUserId, {
+          otherUserId,
+          lastMessage: message,
+          unreadCount: message.receiver_id === state.user.id && !message.read_at ? 1 : 0,
+        });
+        return;
+      }
+
+      if (message.receiver_id === state.user.id && !message.read_at) {
+        existing.unreadCount += 1;
+      }
+    });
+
+    let profilesById = new Map();
+    if (otherUserIds.size) {
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .in('id', [...otherUserIds]);
+
+      if (!profileError) {
+        profilesById = new Map((profiles || []).map((profile) => [profile.id, profile]));
+      }
+    }
+
+    state.messages.conversations = [...byUser.values()]
+      .map((conversation) => ({
+        ...conversation,
+        user: profilesById.get(conversation.otherUserId) || {
+          id: conversation.otherUserId,
+          username: 'member',
+          display_name: 'member',
+          avatar_url: DEFAULT_AVATAR,
+        },
+      }))
+      .sort((left, right) => new Date(right.lastMessage.created_at) - new Date(left.lastMessage.created_at));
+
+    renderMessagesView();
+
+    if (state.messages.activeUser) {
+      await loadConversationMessages(state.messages.activeUser.id);
+    }
+  }
+
+  function renderConversations() {
+    if (!dom.conversationList) {
+      return;
+    }
+
+    if (!state.messages.conversations.length) {
+      dom.conversationList.innerHTML = '<div class="empty-state">No conversations yet. Start one from Search or a profile.</div>';
+      return;
+    }
+
+    dom.conversationList.innerHTML = state.messages.conversations.map((conversation) => `
+      <button
+        class="conversation-item ${state.messages.activeUser?.id === conversation.user.id ? 'active' : ''}"
+        type="button"
+        data-action="message-user"
+        data-user-id="${escapeHtml(conversation.user.id)}"
+        data-username="${escapeHtml(conversation.user.username)}"
+        data-display-name="${escapeHtml(conversation.user.display_name || conversation.user.username)}"
+        data-avatar-url="${escapeHtml(conversation.user.avatar_url || DEFAULT_AVATAR)}"
+      >
+        <img class="avatar small" src="${escapeHtml(conversation.user.avatar_url || DEFAULT_AVATAR)}" alt="${escapeHtml(conversation.user.username)}">
+        <div class="conversation-main">
+          <strong>${escapeHtml(conversation.user.display_name || conversation.user.username)}</strong>
+          <div class="meta-line">@${escapeHtml(conversation.user.username)}</div>
+          <div class="meta-line">${escapeHtml(truncateText(conversation.lastMessage.body, 72))}</div>
+        </div>
+        ${conversation.unreadCount ? `<span class="post-chip">${conversation.unreadCount} new</span>` : ''}
+      </button>
+    `).join('');
+  }
+
+  async function openConversation(user) {
+    if (!requireUserSession('messaging people')) {
+      return;
+    }
+
+    state.messages.activeUser = {
+      id: user.id,
+      username: user.username || 'member',
+      display_name: user.display_name || user.username || 'member',
+      avatar_url: user.avatar_url || DEFAULT_AVATAR,
+    };
+
+    renderView('messages');
+    renderMessagesView();
+    await loadConversations(false);
+    await loadConversationMessages(user.id);
+  }
+
+  async function loadConversationMessages(otherUserId) {
+    if (!state.user || !otherUserId) {
+      return;
+    }
+
+    dom.messageThread.innerHTML = '<div class="empty-state">Loading messages...</div>';
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, sender_id, receiver_id, body, read_at, created_at')
+      .or(`and(sender_id.eq.${state.user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${state.user.id})`)
+      .order('created_at', { ascending: true })
+      .limit(200);
+
+    if (error) {
+      dom.messageThread.innerHTML = `<div class="empty-state">${escapeHtml(humanizeError(error))}</div>`;
+      dom.messageComposer.hidden = true;
+      return;
+    }
+
+    state.messages.threads[otherUserId] = data || [];
+    await markConversationRead(otherUserId);
+    renderActiveConversation();
+  }
+
+  async function markConversationRead(otherUserId) {
+    if (!state.user || !otherUserId) {
+      return;
+    }
+
+    await supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('sender_id', otherUserId)
+      .eq('receiver_id', state.user.id)
+      .is('read_at', null);
+
+    state.messages.conversations = state.messages.conversations.map((conversation) =>
+      conversation.user.id === otherUserId
+        ? { ...conversation, unreadCount: 0 }
+        : conversation
+    );
+  }
+
+  function renderActiveConversation() {
+    if (!dom.messageThread || !dom.chatHeader || !dom.messageComposer) {
+      return;
+    }
+
+    if (!state.messages.activeUser) {
+      dom.chatHeader.querySelector('h3').textContent = 'Choose a chat';
+      dom.chatBackButton.hidden = true;
+      dom.messageThread.innerHTML = '<div class="empty-state">Select a conversation or start one from Search or Profile.</div>';
+      dom.messageComposer.hidden = true;
+      return;
+    }
+
+    const activeUser = state.messages.activeUser;
+    const messages = state.messages.threads[activeUser.id] || [];
+    dom.chatHeader.querySelector('h3').textContent = activeUser.display_name || activeUser.username;
+    dom.chatBackButton.hidden = false;
+    dom.messageComposer.hidden = false;
+
+    if (!messages.length) {
+      dom.messageThread.innerHTML = '<div class="empty-state">No messages yet. Say hello.</div>';
+      return;
+    }
+
+    dom.messageThread.innerHTML = messages.map((message) => `
+      <article class="message-row ${message.sender_id === state.user.id ? 'outgoing' : 'incoming'}">
+        <p class="comment-body">${escapeHtml(message.body)}</p>
+        <div class="post-meta">${escapeHtml(formatMessageTime(message.created_at))}</div>
+      </article>
+    `).join('');
+    dom.messageThread.scrollTop = dom.messageThread.scrollHeight;
+  }
+
+  async function handleMessageSubmit(event) {
+    event.preventDefault();
+
+    if (!requireUserSession('sending messages') || !state.messages.activeUser) {
+      return;
+    }
+
+    const body = dom.messageInput?.value.trim() || '';
+    if (!body) {
+      showToast('Write a message before sending.', 'error');
+      return;
+    }
+
+    const { error } = await supabase.from('messages').insert({
+      sender_id: state.user.id,
+      receiver_id: state.messages.activeUser.id,
+      body,
+    });
+
+    if (error) {
+      showToast(humanizeError(error), 'error');
+      return;
+    }
+
+    dom.messageInput.value = '';
+    await loadConversations(true);
+    await loadConversationMessages(state.messages.activeUser.id);
   }
 
   async function loadProfile(username, userId) {
@@ -1072,7 +1538,17 @@
     const followerCount = followersResult.count || 0;
     const followingCount = followingResult.count || 0;
     const isOwner = state.user?.id === profile.id;
-    let followButtonMarkup = '';
+    let profileActionsMarkup = '';
+
+    if (isOwner) {
+      state.profile = profile;
+      profileActionsMarkup = `
+        <div class="profile-actions">
+          <button class="primary-button" type="button" id="openProfileEditButton">Edit profile</button>
+          <button class="ghost-button" type="button" data-action="logout">Logout</button>
+        </div>
+      `;
+    }
 
     if (state.authMode === 'user' && state.user && !isOwner) {
       const { data: follows, error: followError } = await supabase
@@ -1084,7 +1560,22 @@
 
       if (!followError) {
         const isFollowing = Boolean(follows?.length);
-        followButtonMarkup = `<button class="primary-button" id="followToggleButton" type="button">${isFollowing ? 'Unfollow' : 'Follow'}</button>`;
+        profileActionsMarkup = `
+          <div class="profile-actions">
+            <button class="primary-button" id="followToggleButton" type="button">${isFollowing ? 'Unfollow' : 'Follow'}</button>
+            <button
+              class="ghost-button"
+              type="button"
+              data-action="message-user"
+              data-user-id="${escapeHtml(profile.id)}"
+              data-username="${escapeHtml(profile.username)}"
+              data-display-name="${escapeHtml(profile.display_name || profile.username)}"
+              data-avatar-url="${escapeHtml(profile.avatar_url || DEFAULT_AVATAR)}"
+            >
+              Message
+            </button>
+          </div>
+        `;
         queueMicrotask(() => {
           document.getElementById('followToggleButton')?.addEventListener('click', () => toggleFollow(profile.id, isFollowing));
         });
@@ -1105,10 +1596,18 @@
         <span><strong>${followerCount}</strong> followers</span>
         <span><strong>${followingCount}</strong> following</span>
       </div>
-      ${isOwner ? '<div class="auth-helper">This is your public profile.</div>' : followButtonMarkup}
+      ${isOwner ? '<div class="auth-helper">This is your public profile.</div>' : ''}
+      ${profileActionsMarkup}
     `;
 
+    if (isOwner) {
+      queueMicrotask(() => {
+        document.getElementById('openProfileEditButton')?.addEventListener('click', openProfileEditModal);
+      });
+    }
+
     dom.profileGrid.innerHTML = posts.length ? posts.map(renderPostCard).join('') : '<div class="empty-state">No posts on this profile yet.</div>';
+    prepareAutoPlayVideos(dom.profileGrid);
   }
 
   async function toggleFollow(targetUserId, isFollowing) {
@@ -1130,6 +1629,103 @@
 
     showToast(isFollowing ? 'Unfollowed successfully.' : 'Started following user.', 'success');
     await loadProfile(state.profileUsername, state.profileUserId || targetUserId);
+  }
+
+  function openProfileEditModal() {
+    if (!requireUserSession('editing your profile')) {
+      return;
+    }
+
+    dom.profileBioInput.value = state.profile?.bio || '';
+    dom.removeProfileImage.checked = false;
+    dom.profileImageInput.value = '';
+    clearPreviewUrl('avatar');
+    dom.profileImagePreview.hidden = !state.profile?.avatar_url;
+    dom.profileImagePreview.innerHTML = state.profile?.avatar_url
+      ? `<img src="${escapeHtml(state.profile.avatar_url)}" alt="Current avatar" class="post-image">`
+      : '';
+    dom.profileEditModal.hidden = false;
+  }
+
+  function handleProfileImageSelection(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      clearPreviewUrl('avatar');
+      dom.profileImagePreview.hidden = true;
+      dom.profileImagePreview.innerHTML = '';
+      return;
+    }
+
+    if (file.size > MAX_AVATAR_BYTES) {
+      showToast('Profile photos must be 180KB or smaller.', 'error');
+      event.target.value = '';
+      clearPreviewUrl('avatar');
+      dom.profileImagePreview.hidden = true;
+      dom.profileImagePreview.innerHTML = '';
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setPreviewUrl('avatar', previewUrl);
+    dom.profileImagePreview.hidden = false;
+    dom.profileImagePreview.innerHTML = `<img src="${escapeHtml(previewUrl)}" alt="Selected profile preview" class="post-image">`;
+    dom.removeProfileImage.checked = false;
+  }
+
+  async function handleProfileEditSubmit(event) {
+    event.preventDefault();
+
+    if (!requireUserSession('editing your profile')) {
+      return;
+    }
+
+    let avatarUrl = state.profile?.avatar_url || null;
+    const removeAvatar = dom.removeProfileImage.checked;
+    const avatarFile = dom.profileImageInput.files?.[0];
+
+    if (removeAvatar) {
+      avatarUrl = null;
+    } else if (avatarFile) {
+      if (avatarFile.size > MAX_AVATAR_BYTES) {
+        showToast('Profile photos must be 180KB or smaller.', 'error');
+        return;
+      }
+
+      const uploadResult = await uploadFile(avatarFile, 'avatars');
+      if (uploadResult.error) {
+        const inlineAvatarResult = await convertImageToDataUrl(avatarFile);
+        if (inlineAvatarResult.error) {
+          showToast(humanizeError(uploadResult.error), 'error');
+          return;
+        }
+        avatarUrl = inlineAvatarResult.dataUrl;
+      } else {
+        avatarUrl = uploadResult.publicUrl;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        bio: (dom.profileBioInput?.value || '').trim().slice(0, 160),
+        avatar_url: avatarUrl,
+      })
+      .eq('id', state.user.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      showToast(humanizeError(error), 'error');
+      return;
+    }
+
+    state.profile = data;
+    dom.profileEditModal.hidden = true;
+    clearPreviewUrl('avatar');
+    dom.profileImagePreview.hidden = true;
+    dom.profileImagePreview.innerHTML = '';
+    showToast('Profile updated.', 'success');
+    await loadProfile(data.username, data.id);
   }
 
   async function openCreateModal() {
@@ -1224,6 +1820,17 @@
         showToast('Reels must be 1MB or smaller.', 'error');
         return;
       }
+      let durationSeconds = 0;
+      try {
+        durationSeconds = await readVideoDuration(reelFile);
+      } catch (error) {
+        showToast(humanizeError(error), 'error');
+        return;
+      }
+      if (durationSeconds > MAX_REEL_DURATION_SECONDS) {
+        showToast(`Reels must be ${MAX_REEL_DURATION_SECONDS} seconds or shorter.`, 'error');
+        return;
+      }
       const uploadResult = await uploadFile(reelFile, 'reel-videos');
       if (uploadResult.error) {
         showToast(humanizeError(uploadResult.error), 'error');
@@ -1247,7 +1854,8 @@
 
   async function uploadFile(file, bucket) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `${Date.now()}-${safeName}`;
+    const ownerPrefix = state.user?.id || 'public';
+    const filePath = `${ownerPrefix}/${Date.now()}-${safeName}`;
     const { error } = await supabase.storage.from(bucket).upload(filePath, file, {
       cacheControl: '3600',
       upsert: false,
@@ -1279,9 +1887,28 @@
     });
   }
 
+  function readVideoDuration(file) {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        const durationSeconds = Number.isFinite(video.duration) ? video.duration : 0;
+        URL.revokeObjectURL(objectUrl);
+        resolve(durationSeconds);
+      };
+      video.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Could not read reel metadata.'));
+      };
+      video.src = objectUrl;
+    });
+  }
+
   function handleImageSelection(event) {
     const file = event.target.files?.[0];
     if (!file) {
+      clearPreviewUrl('image');
       dom.imagePreview.hidden = true;
       dom.imagePreview.innerHTML = '';
       return;
@@ -1289,6 +1916,7 @@
 
     if (file.size > MAX_IMAGE_BYTES) {
       dom.imageHint.textContent = 'That image is too large. Keep it at 200KB or smaller.';
+      clearPreviewUrl('image');
       dom.imagePreview.hidden = true;
       dom.imagePreview.innerHTML = '';
       return;
@@ -1296,12 +1924,15 @@
 
     dom.imageHint.textContent = 'Image is ready to upload.';
     dom.imagePreview.hidden = false;
-    dom.imagePreview.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Selected image preview" class="post-image">`;
+    const previewUrl = URL.createObjectURL(file);
+    setPreviewUrl('image', previewUrl);
+    dom.imagePreview.innerHTML = `<img src="${escapeHtml(previewUrl)}" alt="Selected image preview" class="post-image">`;
   }
 
-  function handleReelSelection(event) {
+  async function handleReelSelection(event) {
     const file = event.target.files?.[0];
     if (!file) {
+      clearPreviewUrl('reel');
       dom.reelPreview.hidden = true;
       dom.reelPreview.innerHTML = '';
       return;
@@ -1309,6 +1940,27 @@
 
     if (file.size > MAX_REEL_BYTES) {
       dom.reelHint.textContent = 'That reel is too large. Keep it at 1MB or smaller.';
+      clearPreviewUrl('reel');
+      dom.reelPreview.hidden = true;
+      dom.reelPreview.innerHTML = '';
+      return;
+    }
+
+    let durationSeconds = 0;
+    try {
+      durationSeconds = await readVideoDuration(file);
+    } catch (error) {
+      dom.reelHint.textContent = humanizeError(error);
+      event.target.value = '';
+      clearPreviewUrl('reel');
+      dom.reelPreview.hidden = true;
+      dom.reelPreview.innerHTML = '';
+      return;
+    }
+    if (durationSeconds > MAX_REEL_DURATION_SECONDS) {
+      dom.reelHint.textContent = `That reel is too long. Keep it at ${MAX_REEL_DURATION_SECONDS} seconds or shorter.`;
+      event.target.value = '';
+      clearPreviewUrl('reel');
       dom.reelPreview.hidden = true;
       dom.reelPreview.innerHTML = '';
       return;
@@ -1316,11 +1968,15 @@
 
     dom.reelHint.textContent = 'Reel is ready to upload.';
     dom.reelPreview.hidden = false;
-    dom.reelPreview.innerHTML = `<video controls src="${URL.createObjectURL(file)}" class="reel-video"></video>`;
+    const previewUrl = URL.createObjectURL(file);
+    setPreviewUrl('reel', previewUrl);
+    dom.reelPreview.innerHTML = `<video controls src="${escapeHtml(previewUrl)}" class="reel-video"></video>`;
   }
 
   function resetCreateForm() {
     dom.createForm?.reset();
+    clearPreviewUrl('image');
+    clearPreviewUrl('reel');
     dom.imagePreview.hidden = true;
     dom.reelPreview.hidden = true;
     dom.imagePreview.innerHTML = '';
@@ -1344,32 +2000,84 @@
       state.currentCommentPostId = null;
       dom.commentInput.value = '';
     }
+    if (modalId === 'profileEditModal') {
+      clearPreviewUrl('avatar');
+      dom.profileImagePreview.hidden = true;
+      dom.profileImagePreview.innerHTML = '';
+      dom.profileEditForm?.reset();
+    }
   }
 
   async function subscribeRealtime() {
-    if (state.realtimeSubscribed || !config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) {
+    if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) {
+      return;
+    }
+
+    if (!state.realtimeSubscribed.base) {
+      supabase
+        .channel('instajoy-posts')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+          if (state.activeView === 'home') {
+            loadHomeFeed(true);
+          }
+          if (state.activeView === 'reels') {
+            loadReelsFeed(true);
+          }
+        })
+        .subscribe();
+
+      supabase
+        .channel('instajoy-comments')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, (payload) => {
+          const postId = payload.new?.post_id || payload.old?.post_id;
+          if (state.currentCommentPostId && postId === state.currentCommentPostId) {
+            loadComments(state.currentCommentPostId);
+          }
+        })
+        .subscribe();
+
+      state.realtimeSubscribed.base = true;
+    }
+
+    if (state.authMode !== 'user' || !state.user || state.realtimeSubscribed.userId === state.user.id) {
       return;
     }
 
     supabase
-      .channel('instajoy-posts')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
-        if (state.activeView === 'home') {
-          loadHomeFeed(true);
+      .channel(`instajoy-messages-${state.user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `receiver_id=eq.${state.user.id}`,
+        },
+        async () => {
+          await loadConversations(true);
         }
-      })
+      )
       .subscribe();
 
     supabase
-      .channel('instajoy-comments')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, (payload) => {
-        if (state.currentCommentPostId && payload.new?.post_id === state.currentCommentPostId) {
-          loadComments(state.currentCommentPostId);
+      .channel(`instajoy-notifications-${state.user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${state.user.id}`,
+        },
+        async () => {
+          if (state.activeView === 'notifications') {
+            await loadNotifications();
+          }
         }
-      })
+      )
       .subscribe();
 
-    state.realtimeSubscribed = true;
+    state.realtimeSubscribed.userId = state.user.id;
   }
 
   async function attemptRegisterFcmToken() {
@@ -1674,6 +2382,7 @@
     `;
 
     dom.profileGrid.innerHTML = posts.length ? posts.map(renderPostCard).join('') : '<div class="empty-state">No posts on this profile yet.</div>';
+    prepareAutoPlayVideos(dom.profileGrid);
   }
 
   async function insertPostWithCompatibility(payload) {
@@ -1832,6 +2541,72 @@
     };
   }
 
+  function setPreviewUrl(kind, nextUrl) {
+    clearPreviewUrl(kind);
+    state.previewUrls[kind] = nextUrl || '';
+  }
+
+  function clearPreviewUrl(kind) {
+    const previousUrl = state.previewUrls[kind];
+    if (previousUrl) {
+      URL.revokeObjectURL(previousUrl);
+    }
+    state.previewUrls[kind] = '';
+  }
+
+  function prepareAutoPlayVideos(container) {
+    if (!container || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+
+    if (!videoObserver) {
+      videoObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            const video = entry.target;
+            if (!(video instanceof HTMLVideoElement)) {
+              return;
+            }
+
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.72) {
+              video.play().catch(() => {});
+              return;
+            }
+
+            video.pause();
+          });
+        },
+        {
+          threshold: [0.2, 0.72],
+          rootMargin: '120px 0px',
+        }
+      );
+    }
+
+    container.querySelectorAll('[data-auto-play-video]').forEach((video) => {
+      videoObserver.observe(video);
+    });
+  }
+
+  function truncateText(value, maxLength) {
+    const normalized = String(value || '');
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}...` : normalized;
+  }
+
+  function formatMessageTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return 'just now';
+    }
+
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+
   function updateTopbarAction() {
     if (!dom.topbarAction) {
       return;
@@ -1847,7 +2622,27 @@
       return;
     }
 
-    dom.topbarAction.textContent = state.authMode === 'user' ? 'Logout' : 'Refresh';
+    if (state.activeView === 'notifications') {
+      dom.topbarAction.textContent = 'Read all';
+      return;
+    }
+
+    if (state.activeView === 'search') {
+      dom.topbarAction.textContent = 'Clear';
+      return;
+    }
+
+    if (state.activeView === 'messages') {
+      dom.topbarAction.textContent = 'Refresh';
+      return;
+    }
+
+    if (state.activeView === 'profile' && state.user?.id === state.profileUserId) {
+      dom.topbarAction.textContent = 'Edit';
+      return;
+    }
+
+    dom.topbarAction.textContent = 'Refresh';
   }
 
   function updateWriteAccessUi() {
@@ -1938,16 +2733,28 @@
       return 'Reels are not supported by this deployment yet.';
     }
 
+    if (message.includes('relation "public.messages" does not exist') || message.includes('relation "messages" does not exist')) {
+      return 'Messaging is not configured yet. Apply the latest Supabase migration to create the messages table and policies.';
+    }
+
     if (message.includes('column posts.content') && message.includes('does not exist')) {
       return 'This deployment stores text posts in a legacy format. Compatibility mode is active.';
     }
 
     if (message.includes('bucket not found')) {
-      return 'Supabase storage is not configured for this deployment. Small images will try to publish in compatibility mode.';
+      return 'Supabase storage is not fully configured for this deployment. The app will use inline image fallbacks where it can.';
     }
 
     if (message.includes('foreign key') && message.includes('profiles')) {
       return 'Posting is blocked because the linked profiles table is missing or not connected correctly in Supabase.';
+    }
+
+    if (message.includes('you cannot message yourself')) {
+      return 'You cannot send a message to your own account.';
+    }
+
+    if (message.includes('you cannot follow yourself')) {
+      return 'You cannot follow your own account.';
     }
 
     if (message.includes('row-level security') || message.includes('violates row-level security')) {

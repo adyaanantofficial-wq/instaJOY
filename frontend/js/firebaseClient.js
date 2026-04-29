@@ -1,5 +1,6 @@
 window.INSTAJOY_FCM = (() => {
   const config = window.INSTAJOY_CONFIG || {};
+  const PLACEHOLDER_PREFIXES = ['your-', 'YOUR_', 'replace-'];
   const firebaseConfig = {
     apiKey: config.FIREBASE_API_KEY,
     authDomain: `${config.FIREBASE_PROJECT_ID}.firebaseapp.com`,
@@ -8,8 +9,25 @@ window.INSTAJOY_FCM = (() => {
     appId: config.FIREBASE_APP_ID,
   };
 
+  function isConfiguredValue(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return false;
+    }
+
+    return !PLACEHOLDER_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  }
+
+  function hasMessagingConfig() {
+    return isConfiguredValue(config.FIREBASE_API_KEY)
+      && isConfiguredValue(config.FIREBASE_PROJECT_ID)
+      && isConfiguredValue(config.FIREBASE_MESSAGING_SENDER_ID)
+      && isConfiguredValue(config.FIREBASE_APP_ID)
+      && isConfiguredValue(config.FIREBASE_VAPID_KEY);
+  }
+
   function initFirebase() {
-    if (!window.firebase || !window.firebase.messaging) {
+    if (!hasMessagingConfig() || !window.firebase || !window.firebase.messaging) {
       console.warn('Firebase messaging not available');
       return null;
     }
@@ -24,7 +42,7 @@ window.INSTAJOY_FCM = (() => {
   async function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
         return registration;
       } catch (error) {
         console.warn('Service worker registration failed', error);
@@ -36,7 +54,7 @@ window.INSTAJOY_FCM = (() => {
 
   async function getFcmToken() {
     const messaging = initFirebase();
-    if (!messaging || !config.FIREBASE_VAPID_KEY) {
+    if (!messaging || !hasMessagingConfig()) {
       return null;
     }
 
@@ -51,7 +69,7 @@ window.INSTAJOY_FCM = (() => {
   }
 
   async function requestPermission() {
-    if (!('Notification' in window)) {
+    if (!hasMessagingConfig() || !('Notification' in window)) {
       return false;
     }
 

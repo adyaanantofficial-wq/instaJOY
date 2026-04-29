@@ -320,6 +320,14 @@ video {
     gap: 0.9rem;
 }
 
+.post-card,
+.reel-card,
+.compact-card,
+.grid-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 280px;
+}
+
 .compact-list {
     gap: 0.7rem;
 }
@@ -701,6 +709,8 @@ select:focus {
 
 .conversation-item {
     align-items: center;
+    width: 100%;
+    text-align: left;
 }
 
 .conversation-item.active {
@@ -759,6 +769,10 @@ select:focus {
     gap: 0.5rem;
 }
 
+.search-result-head {
+    align-items: flex-start;
+}
+
 .profile-summary {
     margin-bottom: 1rem;
     display: grid;
@@ -799,6 +813,12 @@ select:focus {
 
 .profile-stats-inline strong {
     color: var(--text);
+}
+
+.profile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
 }
 
 .profile-top {

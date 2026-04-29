@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -143,24 +143,24 @@
             </section>
         </main>
 
-        <nav id="bottomNav" class="bottom-nav" hidden>
+        <nav id="bottomNav" class="bottom-nav" hidden aria-label="Primary">
             <button class="nav-button active" type="button" data-view="home">
-                <span>🏠Home</span>
+                <span>Home</span>
             </button>
             <button class="nav-button" type="button" data-view="reels">
-                <span>🎥Reels</span>
+                <span>Reels</span>
             </button>
             <button class="nav-button" type="button" data-view="messages">
-                <span>💬Messages</span>
+                <span>Messages</span>
             </button>
             <button class="nav-button" type="button" data-view="search">
-                <span>🔍Search</span>
+                <span>Search</span>
             </button>
             <button class="nav-button" type="button" data-view="notifications">
-                <span>🔔Alerts</span>
+                <span>Alerts</span>
             </button>
             <button class="nav-button nav-create" id="openCreateButton" type="button">
-                <span>➕ Post</span>
+                <span>Post</span>
             </button>
             <button class="nav-button" type="button" data-view="profile">
                 <span>Profile</span>
@@ -269,19 +269,11 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="frontend/js/config.js"></script>
-    <script>
-        if (window.supabase && window.INSTAJOY_CONFIG) {
-            const client = window.supabase.createClient(
-                window.INSTAJOY_CONFIG.SUPABASE_URL,
-                window.INSTAJOY_CONFIG.SUPABASE_ANON_KEY
-            );
-            window.supabaseClient = client;
-            window.supabase = client;
-        }
-    </script>
+    <script src="frontend/js/bootstrap-clients.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-messaging-compat.js"></script>
     <script src="frontend/js/firebaseClient.js"></script>
     <script src="frontend/js/supabase-app.js"></script>
 </body>
 </html>
+

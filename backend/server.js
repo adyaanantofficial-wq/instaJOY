@@ -33,12 +33,6 @@ const searchRoutes = require('./routes/searchRoutes');
 const followRoutes = require('./routes/followRoutes');
 const { authLimiter } = require('./middleware/rateLimiters');
 
-function requireEnv(name) {
-    if (!process.env[name]) {
-        throw new Error(`${name} is required`);
-    }
-}
-
 function normalizeOrigin(value) {
     const normalized = String(value || '').trim();
 
@@ -85,6 +79,7 @@ function getAllowedOrigins() {
 const allowedOrigins = getAllowedOrigins();
 const app = express();
 app.set('trust proxy', 1);
+let backendApiEnabled = false;
 
 app.use(
     helmet({
@@ -136,16 +131,35 @@ const generalLimiter = rateLimit({
     },
 });
 
+function ensureBackendApiEnabled(req, res, next) {
+    if (backendApiEnabled) {
+        return next();
+    }
+
+    return res.status(503).json({
+        success: false,
+        message: 'The optional MongoDB/JWT API is not configured for this deployment. The Supabase-powered frontend can still be used normally.',
+    });
+}
+
 app.get('/api/health', async (req, res) => {
     res.json({
         success: true,
         status: 'ok',
+        backendApiEnabled,
         timestamp: new Date().toISOString(),
     });
 });
 
 // Add a health check endpoint for MongoDB connectivity
 app.get('/api/db-health', async (req, res) => {
+    if (!backendApiEnabled) {
+        return res.status(503).json({
+            success: false,
+            message: 'MongoDB-backed API is disabled for this deployment.',
+        });
+    }
+
     try {
         const db = await connectDB();
         await db.command({ ping: 1 });
@@ -156,14 +170,14 @@ app.get('/api/db-health', async (req, res) => {
 });
 
 app.use('/api', generalLimiter);
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/posts', postRoutes);
-app.use('/api/reels', reelRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/follows', followRoutes);
-app.use('/api/messages', messageRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/search', searchRoutes);
+app.use('/api/auth', ensureBackendApiEnabled, authLimiter, authRoutes);
+app.use('/api/posts', ensureBackendApiEnabled, postRoutes);
+app.use('/api/reels', ensureBackendApiEnabled, reelRoutes);
+app.use('/api/users', ensureBackendApiEnabled, userRoutes);
+app.use('/api/follows', ensureBackendApiEnabled, followRoutes);
+app.use('/api/messages', ensureBackendApiEnabled, messageRoutes);
+app.use('/api/notifications', ensureBackendApiEnabled, notificationRoutes);
+app.use('/api/search', ensureBackendApiEnabled, searchRoutes);
 
 app.use((req, res) => {
     res.status(404).json({
@@ -202,14 +216,21 @@ async function connectWithRetry(attempts = 5, delayMs = 3000) {
 }
 
 async function startServer() {
-    requireEnv('MONGODB_URI');
-    requireEnv('JWT_SECRET');
-    requireEnv('JWT_REFRESH_SECRET');
+    const missingBackendVars = ['MONGODB_URI', 'JWT_SECRET', 'JWT_REFRESH_SECRET'].filter((name) => !process.env[name]);
 
-    try {
-        await connectWithRetry();
-    } catch (error) {
-        console.error('Failed to connect to MongoDB after retries:', error.message);
+    if (missingBackendVars.length) {
+        backendApiEnabled = false;
+        console.warn(
+            `Starting in frontend-only mode because these backend environment variables are missing: ${missingBackendVars.join(', ')}`
+        );
+    } else {
+        try {
+            await connectWithRetry();
+            backendApiEnabled = true;
+        } catch (error) {
+            backendApiEnabled = false;
+            console.error('Failed to connect to MongoDB after retries:', error.message);
+        }
     }
 
     server = app.listen(PORT, '0.0.0.0', () => {

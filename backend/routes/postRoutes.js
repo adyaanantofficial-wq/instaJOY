@@ -10,7 +10,7 @@ router.post('/', protect, createContentLimiter, postController.createPost);
 router.get('/feed', optionalAuth, postController.getFeed);
 router.get('/user/:username', optionalAuth, postController.getUserPosts);
 router.get('/:postId', optionalAuth, postController.getPostById);
-router.get('/:postId/comments', protect, postController.getComments);
+router.get('/:postId/comments', optionalAuth, postController.getComments);
 router.post('/:postId/like', protect, postController.likePost);
 router.delete('/:postId/like', protect, postController.unlikePost);
 router.post('/:postId/comments', protect, createContentLimiter, postController.commentOnPost);
