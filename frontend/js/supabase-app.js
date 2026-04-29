@@ -598,6 +598,11 @@
       return;
     }
 
+    if (action === 'share' && postId) {
+      sharePost(postId);
+      return;
+    }
+
     if (action === 'message-user' && userId) {
       openConversation({
         id: userId,
@@ -610,6 +615,33 @@
 
     if (action === 'logout') {
       logoutUser();
+    }
+  }
+
+  async function sharePost(postId) {
+    const shareUrl = `${window.location.origin}${window.location.pathname}?post=${encodeURIComponent(postId)}`;
+    const shareText = `Check out this instaJOY post: ${shareUrl}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'Share on instaJOY',
+          text: shareText,
+          url: shareUrl,
+        });
+        showToast('Share dialog opened.', 'success');
+        return;
+      }
+
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareText);
+        showToast('Share link copied to clipboard.', 'success');
+        return;
+      }
+
+      throw new Error('Sharing is not supported in this browser.');
+    } catch (error) {
+      showToast('Could not share this item right now. Copy the link manually to share it.', 'error');
     }
   }
 
@@ -951,6 +983,7 @@
         <footer class="post-actions">
           <button class="secondary-button" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>${liked ? 'Unlike' : 'Like'}</button>
           <button class="secondary-button" data-action="comment" data-post-id="${normalized.id}">Comments</button>
+          <button class="secondary-button" data-action="share" data-post-id="${normalized.id}">Share</button>
         </footer>
       </article>
     `;
@@ -1174,6 +1207,10 @@
         </header>
         ${normalized.media_url ? `<video controls preload="metadata" muted loop playsinline data-auto-play-video src="${escapeHtml(normalized.media_url)}" class="reel-video"></video>` : ''}
         <div class="post-body">${escapeHtml(normalized.caption || normalized.content || '')}</div>
+        <footer class="post-actions">
+          <button class="secondary-button" data-action="comment" data-post-id="${normalized.id}">Comments</button>
+          <button class="secondary-button" data-action="share" data-post-id="${normalized.id}">Share</button>
+        </footer>
       </article>
     `;
   }

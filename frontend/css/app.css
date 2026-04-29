@@ -270,6 +270,10 @@ button[data-action="comment"]::before {
     content: '💬 ';
 }
 
+button[data-action="share"]::before {
+    content: '🔗 ';
+}
+
 button[data-action="view-profile"]::before {
     content: '👤 ';
 }
@@ -347,6 +351,15 @@ button.primary-button::before {
 .grid-card {
     content-visibility: auto;
     contain-intrinsic-size: 280px;
+}
+
+.reels-list {
+    justify-items: center;
+}
+
+.reel-card {
+    width: min(100%, 540px);
+    margin-inline: auto;
 }
 
 .compact-list {
@@ -657,6 +670,7 @@ select:focus {
 .reel-video,
 .preview-video {
     aspect-ratio: 9 / 16;
+    max-height: 72vh;
 }
 
 .action-row {
