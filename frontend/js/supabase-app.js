@@ -2712,7 +2712,17 @@
     }
 
     if (options.mode === 'feed') {
-      query = query.range(options.rangeStart, options.rangeEnd);
+      // Accept either explicit rangeStart/rangeEnd or offset/limit pair.
+      const start = (typeof options.rangeStart !== 'undefined') ? options.rangeStart : (typeof options.offset !== 'undefined' ? options.offset : 0);
+      let end;
+      if (typeof options.rangeEnd !== 'undefined') {
+        end = options.rangeEnd;
+      } else if (typeof options.limit !== 'undefined') {
+        end = start + Math.max(0, options.limit - 1);
+      } else {
+        end = start + 9;
+      }
+      query = query.range(start, end);
     } else {
       const requestedLimit = options.mode === 'reels' && variant.localReelFilter
         ? Math.max((options.limit || 12) * 3, 30)
