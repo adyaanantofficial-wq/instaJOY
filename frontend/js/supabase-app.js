@@ -747,7 +747,7 @@
       return { ok: true };
     }
 
-    if (isMissingProfilesTableError(error)) {
+    if (isProfilesSetupCompatibilityError(error)) {
       state.capabilities.profilesTable = 'missing';
       const fallbackProfile = buildProfileDraft(state.user, readPendingProfile() || {});
       state.profile = fallbackProfile;
@@ -760,7 +760,7 @@
       };
     }
 
-    if (error && !isMissingProfilesTableError(error)) {
+    if (error && !isProfilesSetupCompatibilityError(error)) {
       return { ok: false, message: humanizeError(error) };
     }
 
@@ -792,7 +792,7 @@
       .single();
 
     if (error) {
-      if (isMissingProfilesTableError(error)) {
+      if (isProfilesSetupCompatibilityError(error)) {
         state.capabilities.profilesTable = 'missing';
         state.profile = payload;
         state.user.profile = payload;
@@ -2681,7 +2681,40 @@
 
   function isMissingProfilesTableError(error) {
     const message = String(error?.message || '').toLowerCase();
-    return message.includes('schema cache') || message.includes('profiles') && (message.includes('does not exist') || message.includes('not found'));
+    const details = String(error?.details || '').toLowerCase();
+    const hint = String(error?.hint || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    const combined = `${message} ${details} ${hint}`;
+
+    return combined.includes('schema cache')
+      || combined.includes('public.profiles')
+      || combined.includes(' relation "profiles" ')
+      || combined.includes(` relation "public.profiles" `)
+      || combined.includes('could not find the table')
+      || combined.includes('could not find a relationship')
+      || (combined.includes('profiles') && (combined.includes('does not exist') || combined.includes('not found')))
+      || code === '42p01'
+      || code === 'pgrst200'
+      || code === 'pgrst205';
+  }
+
+  function isProfilesSetupCompatibilityError(error) {
+    if (isMissingProfilesTableError(error)) {
+      return true;
+    }
+
+    const message = String(error?.message || '').toLowerCase();
+    const details = String(error?.details || '').toLowerCase();
+    const hint = String(error?.hint || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    const combined = `${message} ${details} ${hint}`;
+
+    return code === '42501'
+      || combined.includes('permission denied for table profiles')
+      || combined.includes('violates row-level security')
+      || combined.includes('row-level security policy')
+      || combined.includes('new row violates row-level security policy for table "profiles"')
+      || combined.includes('infinite recursion detected in policy for relation "profiles"');
   }
 
   function humanizeProfileError(error, attemptedUsername) {
@@ -2721,8 +2754,15 @@
       return 'An account with this email already exists. Try logging in instead.';
     }
 
-    if (message.includes('schema cache') || message.includes('public.profiles') || message.includes('relation "profiles" does not exist')) {
-      return 'Database setup is incomplete. Apply supabase/schema.sql so the profiles table and policies exist.';
+    if (
+      message.includes('schema cache')
+      || message.includes('public.profiles')
+      || message.includes('relation "profiles" does not exist')
+      || message.includes('permission denied for table profiles')
+      || message.includes('row-level security policy')
+      || message.includes('infinite recursion detected in policy for relation "profiles"')
+    ) {
+      return 'Your Supabase public profile setup is incomplete. Apply the latest file in supabase/migrations or supabase/schema.sql, then refresh the app.';
     }
 
     if (message.includes('column posts.type') && message.includes('does not exist')) {

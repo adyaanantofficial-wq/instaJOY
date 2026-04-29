@@ -163,6 +163,29 @@ create table if not exists public.posts (
   )
 );
 
+alter table if exists public.posts add column if not exists type text;
+alter table if exists public.posts add column if not exists category text;
+alter table if exists public.posts add column if not exists content text;
+alter table if exists public.posts add column if not exists media_url text;
+alter table if exists public.posts add column if not exists updated_at timestamptz;
+
+update public.posts
+set type = case
+    when media_url is not null then 'reel'
+    when image_url is not null then 'image'
+    else 'text'
+  end
+where type is null;
+
+update public.posts
+set updated_at = now()
+where updated_at is null;
+
+alter table if exists public.posts alter column type set default 'text';
+alter table if exists public.posts alter column type set not null;
+alter table if exists public.posts alter column updated_at set default now();
+alter table if exists public.posts alter column updated_at set not null;
+
 create index if not exists idx_posts_created_at on public.posts (created_at desc);
 create index if not exists idx_posts_user_id on public.posts (user_id, created_at desc);
 create index if not exists idx_posts_type_created_at on public.posts (type, created_at desc);
