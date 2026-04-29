@@ -419,6 +419,7 @@
         email,
         password,
         options: {
+          emailRedirectTo: 'https://sites.google.com/view/instajoy/home',
           data: {
             username,
             display_name: rawUsername,
