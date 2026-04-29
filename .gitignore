@@ -17,3 +17,6 @@ Thumbs.db
 
 logs/
 *.log
+
+supabase-cli/
+supabase_windows_amd64.tar.gz
