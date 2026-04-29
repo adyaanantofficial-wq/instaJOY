@@ -40,6 +40,69 @@ create table if not exists public.profiles (
   constraint profiles_bio_length_check check (char_length(bio) <= 160)
 );
 
+alter table if exists public.profiles add column if not exists display_name text not null default '';
+alter table if exists public.profiles add column if not exists bio text not null default '';
+alter table if exists public.profiles add column if not exists fcm_token text;
+alter table if exists public.profiles add column if not exists updated_at timestamptz not null default now();
+
+update public.profiles
+set display_name = coalesce(display_name, username)
+where display_name is null;
+
+update public.profiles
+set bio = coalesce(bio, '')
+where bio is null;
+
+update public.profiles
+set updated_at = now()
+where updated_at is null;
+
+do $$
+declare
+  auth_user record;
+  requested_username text;
+  candidate_username text;
+  display_name_value text;
+begin
+  for auth_user in
+    select id, email, raw_user_meta_data
+    from auth.users
+    where id not in (select id from public.profiles)
+  loop
+    requested_username := lower(
+      regexp_replace(
+        coalesce(auth_user.raw_user_meta_data ->> 'username', split_part(auth_user.email, '@', 1), 'user'),
+        '[^a-z0-9._]+',
+        '',
+        'g'
+      )
+    );
+
+    if requested_username is null or char_length(requested_username) < 3 then
+      requested_username := 'user_' || substring(replace(auth_user.id::text, '-', '') from 1 for 8);
+    end if;
+
+    candidate_username := left(requested_username, 30);
+
+    while exists (
+      select 1 from public.profiles where username = candidate_username
+    ) loop
+      candidate_username := left(requested_username, 24) || '_' || substring(replace(auth_user.id::text, '-', '') from 1 for 5);
+    end loop;
+
+    display_name_value := coalesce(
+      nullif(auth_user.raw_user_meta_data ->> 'display_name', ''),
+      nullif(auth_user.raw_user_meta_data ->> 'username', ''),
+      candidate_username
+    );
+
+    insert into public.profiles (id, username, display_name)
+    values (auth_user.id, candidate_username, left(display_name_value, 50))
+    on conflict (id) do nothing;
+  end loop;
+end;
+$$;
+
 create index if not exists idx_profiles_username on public.profiles (username);
 create index if not exists idx_profiles_username_trgm on public.profiles using gin (username gin_trgm_ops);
 
