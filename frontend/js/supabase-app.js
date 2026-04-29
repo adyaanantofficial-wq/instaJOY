@@ -968,22 +968,37 @@
       ? (normalized.media_url ? `<video controls preload="metadata" muted loop playsinline data-auto-play-video src="${escapeHtml(normalized.media_url)}" class="post-image reel-video"></video>` : '')
       : (normalized.image_url ? `<img src="${escapeHtml(normalized.image_url)}" alt="Post image" loading="lazy" decoding="async" class="post-image">` : '');
 
+    // Upgraded Premium Post Card HTML matching modern IG/FB styling
     return `
-      <article class="card post-card">
+      <article class="card post-card" data-post-id="${normalized.id}">
         <header class="post-header">
           <div class="post-author">
-            <strong>${escapeHtml(author.username || 'anonymous')}</strong>
-            <div class="post-meta">${escapeHtml(createdAt)}</div>
+            <img src="${escapeHtml(author.avatar_url || DEFAULT_AVATAR)}" class="avatar small" alt="${escapeHtml(author.username || 'anonymous')}" loading="lazy" data-action="view-profile" data-username="${escapeHtml(author.username || '')}" data-user-id="${escapeHtml(normalized.user_id || '')}" style="cursor: pointer;">
+            <div>
+              <strong data-action="view-profile" data-username="${escapeHtml(author.username || '')}" data-user-id="${escapeHtml(normalized.user_id || '')}">${escapeHtml(author.username || 'anonymous')}</strong>
+              <div class="post-meta">${escapeHtml(createdAt)}</div>
+            </div>
           </div>
-          <button class="ghost-button compact" data-action="view-profile" data-username="${escapeHtml(author.username || '')}" data-user-id="${escapeHtml(normalized.user_id || '')}">Profile</button>
+          <button class="ghost-button compact" aria-label="More options">•••</button>
         </header>
-        ${normalized.category ? `<div class="post-chip">${escapeHtml(normalized.category)}</div>` : ''}
-        <div class="post-body">${escapeHtml(copy)}</div>
+        
         ${media}
+        
+        <div class="post-body">
+          ${normalized.category ? `<span class="post-chip" style="margin-bottom:8px; display:inline-block;">${escapeHtml(normalized.category)}</span><br>` : ''}
+          <strong>${escapeHtml(author.username || 'anonymous')}</strong> ${escapeHtml(copy)}
+        </div>
+        
         <footer class="post-actions">
-          <button class="secondary-button" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>${liked ? 'Unlike' : 'Like'}</button>
-          <button class="secondary-button" data-action="comment" data-post-id="${normalized.id}">Comments</button>
-          <button class="secondary-button" data-action="share" data-post-id="${normalized.id}">Share</button>
+          <button class="action-button ${liked ? 'liked' : ''}" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="${liked ? '#ed4956' : 'none'}" stroke="${liked ? '#ed4956' : 'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+          </button>
+          <button class="action-button" data-action="comment" data-post-id="${normalized.id}">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+          </button>
+          <button class="action-button" data-action="share" data-post-id="${normalized.id}">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
         </footer>
       </article>
     `;
@@ -1623,19 +1638,24 @@
     dom.profileSummary.innerHTML = `
       <div class="profile-header">
         <img src="${escapeHtml(profile.avatar_url || DEFAULT_AVATAR)}" alt="${escapeHtml(profile.username)}" class="avatar-large">
-        <div class="profile-copy">
-          <h2>${escapeHtml(profile.display_name || profile.username)}</h2>
-          <div class="post-meta">@${escapeHtml(profile.username)}</div>
-          <p>${escapeHtml(profile.bio || 'No bio yet.')}</p>
+        <div class="profile-copy" style="flex: 1;">
+          <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 12px;">
+            <h2 style="margin: 0; font-size: 20px; font-weight: 400;">${escapeHtml(profile.username)}</h2>
+            ${isOwner ? '' : profileActionsMarkup}
+          </div>
+          <div class="profile-stats-inline" style="margin-bottom: 12px; display: flex; gap: 24px;">
+            <span><strong>${posts.length}</strong> posts</span>
+            <span><strong>${followerCount}</strong> followers</span>
+            <span><strong>${followingCount}</strong> following</span>
+          </div>
+          <div class="profile-bio">
+            <strong style="display: block;">${escapeHtml(profile.display_name || profile.username)}</strong>
+            <p style="margin: 4px 0 0;">${escapeHtml(profile.bio || '')}</p>
+          </div>
         </div>
       </div>
-      <div class="profile-stats-inline">
-        <span><strong>${posts.length}</strong> posts</span>
-        <span><strong>${followerCount}</strong> followers</span>
-        <span><strong>${followingCount}</strong> following</span>
-      </div>
       ${isOwner ? '<div class="auth-helper">This is your public profile.</div>' : ''}
-      ${profileActionsMarkup}
+      ${isOwner ? profileActionsMarkup : ''}
     `;
 
     if (isOwner) {
@@ -2875,4 +2895,3 @@
     window.setTimeout(() => toast.remove(), 3600);
   }
 })();
-
