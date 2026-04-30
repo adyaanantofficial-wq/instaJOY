@@ -53,17 +53,11 @@
                 <div class="home-grid">
                     <div class="home-left">
                         <div class="view-intro home-intro">
-                            <div>
-                                <h2>Stories</h2>
-                                <p>Quick highlight bubbles from creators and followers. Tap a story to open that profile fast.</p>
-                            </div>
+                           
                         </div>
                         <section id="storiesStrip" class="stories-strip"></section>
                         <div class="home-feed-panel">
-                            <div class="section-header">
-                                <h3>Your feed</h3>
-                                <p class="subtext">Recommended posts sorted by who you follow, then related comments, then liked content.</p>
-                            </div>
+                            
                             <div id="homeFeed" class="stack-list"></div>
                             <button id="homeLoadMore" class="load-more" type="button" hidden>Load more posts</button>
                             <div id="homeEmpty" class="empty-state" hidden></div>
@@ -258,6 +252,12 @@
                     <div id="reelPreview" class="media-preview" hidden></div>
                 </div>
 
+                <label class="checkbox-row">
+                    <input id="shareAsStory" type="checkbox">
+                    <span>Share this post as a story</span>
+                </label>
+                <div class="status-text">Stories disappear after 24 hours and show at the top of the home feed.</div>
+
                 <button id="createSubmit" class="primary-button" type="submit">Publish</button>
             </form>
         </div>
@@ -274,6 +274,22 @@
                 <input id="commentInput" type="text" maxlength="280" placeholder="Write a comment">
                 <button class="primary-button" type="submit">Post</button>
             </form>
+        </div>
+    </div>
+
+    <div id="storyModal" class="modal-shell" hidden>
+        <div class="modal-card story-modal-card">
+            <div class="panel-header">
+                <div class="story-modal-title">
+                    <strong id="storyAuthor">Story</strong>
+                    <div class="story-progress-bar" id="storyProgressBar"></div>
+                </div>
+                <button data-close-modal="storyModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <div class="story-modal-content">
+                <video id="storyVideo" controls autoplay muted playsinline class="post-image" hidden></video>
+                <img id="storyImage" class="post-image" hidden alt="Story preview">
+            </div>
         </div>
     </div>
 

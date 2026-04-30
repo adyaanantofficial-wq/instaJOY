@@ -12,9 +12,47 @@
   const MAX_REEL_BYTES = 1024 * 1024;
   const MAX_REEL_DURATION_SECONDS = 30;
   const MAX_AVATAR_BYTES = 180 * 1024;
+
+  const FALLBACK_STORY = {
+    id: 'instajoy-fallback',
+    username: 'instaJOY',
+    avatar_url: DEFAULT_AVATAR,
+    media: '/assets/instaJOY(1)(1).mp4',
+    type: 'video',
+    verified: true,
+    created_at: new Date().toISOString(),
+  };
+
+  const FALLBACK_DEMO_POSTS = [
+    {
+      id: 'demo-001',
+      user_id: 'instajoy',
+      type: 'image',
+      category: 'ideas',
+      caption: 'Welcome to instaJOY – your feed is ready. Follow creators, post stories, and your home feed will fill in instantly.',
+      image_url: 'ilogo.png',
+      created_at: new Date().toISOString(),
+      profiles: { username: 'instaJOY', avatar_url: 'ilogo.png' },
+      like_count: 128,
+      comment_count: 14,
+    },
+    {
+      id: 'demo-002',
+      user_id: 'instajoy',
+      type: 'text',
+      category: 'jokes',
+      content: 'No posts yet? Use the post button to share the first moment and watch the feed come alive.',
+      created_at: new Date().toISOString(),
+      profiles: { username: 'instaJOY', avatar_url: 'ilogo.png' },
+      like_count: 42,
+      comment_count: 8,
+    },
+  ];
+
   const VIEW_IDS = ['authView', 'homeView', 'reelsView', 'messagesView', 'searchView', 'notificationsView', 'profileView'];
 
   const state = {
+    authMode: 'landing',
     authMode: 'landing',
     authPanel: 'login',
     activeView: 'home',
@@ -29,6 +67,8 @@
     },
     posts: [],
     reels: [],
+    feedPage: 0,
+    hasMoreFeed: true,
     messages: {
       conversations: [],
       activeUser: null,
@@ -142,7 +182,13 @@
     dom.reelInput = document.getElementById('reelInput');
     dom.reelHint = document.getElementById('reelHint');
     dom.reelPreview = document.getElementById('reelPreview');
+    dom.shareAsStory = document.getElementById('shareAsStory');
     dom.commentsModal = document.getElementById('commentsModal');
+    dom.storyModal = document.getElementById('storyModal');
+    dom.storyVideo = document.getElementById('storyVideo');
+    dom.storyImage = document.getElementById('storyImage');
+    dom.storyProgressBar = document.getElementById('storyProgressBar');
+    dom.storyAuthor = document.getElementById('storyAuthor');
     dom.commentsList = document.getElementById('commentsList');
     dom.commentForm = document.getElementById('commentForm');
     dom.commentInput = document.getElementById('commentInput');
@@ -612,6 +658,15 @@
       avatarUrl,
       displayName,
     } = actionButton.dataset;
+    if (action === 'view-story') {
+      openStoryModal({
+        username: username || 'Story',
+        mediaUrl: actionButton.dataset.storyUrl,
+        mediaType: actionButton.dataset.storyType || 'image',
+      });
+      return;
+    }
+
     if (action === 'view-profile') {
       state.profileUsername = username || null;
       state.profileUserId = userId || null;
@@ -1059,82 +1114,113 @@
       return;
     }
 
-    if (state.authMode !== 'user' || !state.user) {
-      dom.storiesStrip.innerHTML = '<div class="empty-state">Stories appear here after logging in and following creators.</div>';
-      return;
+    dom.storiesStrip.innerHTML = '<div class="empty-state">Loading stories...</div>';
+
+    const stories = [];
+    let storyRows = [];
+    let storyError = null;
+
+    if (state.authMode === 'user' && state.user) {
+      const result = await supabase
+        .from('stories')
+        .select('id, user_id, media_url, type, expires_at, created_at, views, profiles(username, avatar_url)')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(12);
+
+      if (!result.error) {
+        storyRows = result.data || [];
+      } else if (isMissingStoriesTableError(result.error)) {
+        state.capabilities.storiesTable = 'missing';
+      } else {
+        storyError = result.error;
+      }
     }
 
-    let storyPosts = [];
-    let error = null;
-
-    const relationResult = await supabase
-      .from('posts')
-      .select('user_id, created_at, image_url, media_url, profiles(username, avatar_url)')
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    if (!relationResult.error) {
-      storyPosts = relationResult.data || [];
-    } else {
-      const fallbackResult = await supabase
+    if (!storyRows.length) {
+      const postResult = await supabase
         .from('posts')
-        .select('user_id, created_at, image_url, media_url')
+        .select('id, user_id, created_at, image_url, media_url, type, profiles(username, avatar_url)')
         .order('created_at', { ascending: false })
         .limit(20);
-      storyPosts = fallbackResult.data || [];
-      error = fallbackResult.error || relationResult.error;
+
+      if (!postResult.error) {
+        storyRows = postResult.data || [];
+      } else {
+        storyError = storyError || postResult.error;
+      }
     }
 
-    if (error && !storyPosts.length) {
+    if (storyError && !storyRows.length) {
       dom.storiesStrip.innerHTML = '<div class="empty-state">Unable to load stories.</div>';
       return;
     }
 
-    const stories = [];
-    const userIds = [];
     const seenUserIds = new Set();
-    for (const post of storyPosts) {
-      if (!post.user_id || seenUserIds.has(post.user_id) || post.user_id === state.user.id) {
+    for (const item of storyRows) {
+      if (!item.user_id || seenUserIds.has(item.user_id) || item.user_id === state.user?.id) {
         continue;
       }
-      seenUserIds.add(post.user_id);
-      userIds.push(post.user_id);
-      stories.push(post);
+      seenUserIds.add(item.user_id);
+      stories.push(normalizeStoryRecord(item));
       if (stories.length >= 8) {
         break;
       }
     }
 
     if (!stories.length) {
-      dom.storiesStrip.innerHTML = '<div class="empty-state">No stories are available yet. Follow people to see story highlights.</div>';
-      return;
-    }
-
-    if (!stories[0].profiles?.username && userIds.length) {
-      const { data: profileRows } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', userIds);
-      const profileMap = new Map((profileRows || []).map((profile) => [profile.id, profile]));
-      stories.forEach((story) => {
-        story.profiles = profileMap.get(story.user_id) || {};
-      });
-    }
-
-    if (!stories.length) {
-      dom.storiesStrip.innerHTML = '<div class="empty-state">No stories are available yet. Follow people to see story highlights.</div>';
-      return;
+      stories.push(FALLBACK_STORY);
     }
 
     dom.storiesStrip.innerHTML = stories.map((story) => {
-      const author = story.profiles || {};
       return `
-        <button class="story-card" type="button" data-action="view-profile" data-user-id="${escapeHtml(story.user_id)}" data-username="${escapeHtml(author.username || '')}">
-          <img class="avatar story-avatar" src="${escapeHtml(author.avatar_url || DEFAULT_AVATAR)}" alt="${escapeHtml(author.username || 'story')}">
-          <span>${escapeHtml(author.username || 'Story')}</span>
+        <button class="story-card" type="button" data-action="view-story" data-story-url="${escapeHtml(story.media)}" data-story-type="${escapeHtml(story.type)}" data-username="${escapeHtml(story.username)}">
+          <img class="avatar story-avatar" src="${escapeHtml(story.avatar_url || DEFAULT_AVATAR)}" alt="${escapeHtml(story.username || 'story')}">
+          <span>${escapeHtml(story.username || 'Story')}</span>
         </button>
       `;
     }).join('');
+
+    console.debug('stories fetched:', stories.length);
+    console.debug('story rendered:', stories.length);
+  }
+
+  function normalizeStoryRecord(record) {
+    const type = record.type || (record.media_url?.endsWith('.mp4') ? 'video' : 'image');
+    return {
+      id: record.id || `story-${Math.random().toString(36).slice(2, 9)}`,
+      user_id: record.user_id,
+      username: record.profiles?.username || record.username || 'instaJOY',
+      avatar_url: record.profiles?.avatar_url || DEFAULT_AVATAR,
+      media: record.media_url || record.image_url || FALLBACK_STORY.media,
+      type,
+      created_at: record.created_at || new Date().toISOString(),
+      verified: Boolean(record.verified),
+    };
+  }
+
+  async function saveStory(storyData) {
+    if (!storyData || !storyData.user_id || !storyData.media_url) {
+      return { ok: false, error: new Error('Invalid story payload.') };
+    }
+
+    const { error } = await supabase.from('stories').insert([{
+      user_id: storyData.user_id,
+      media_url: storyData.media_url,
+      type: storyData.type || 'image',
+      expires_at: storyData.expires_at,
+      created_at: storyData.created_at,
+      views: 0,
+    }]);
+
+    if (error) {
+      if (isMissingStoriesTableError(error)) {
+        state.capabilities.storiesTable = 'missing';
+      }
+      return { ok: false, error };
+    }
+
+    return { ok: true };
   }
 
   async function loadFeedAffinity() {
@@ -1237,6 +1323,61 @@
     state.likedPostIds = new Set((data || []).map((item) => item.post_id));
   }
 
+  async function loadHomeFeed(reset) {
+    if (state.postLoading) {
+      return;
+    }
+
+    if (reset) {
+      state.posts = [];
+      state.feedPage = 0;
+      state.hasMoreFeed = true;
+    }
+
+    if (!state.hasMoreFeed && !reset) {
+      return;
+    }
+
+    state.postLoading = true;
+    dom.homeEmpty?.hidden = true;
+    dom.homeLoadMore?.hidden = true;
+    if (!state.posts.length) {
+      dom.homeFeed.innerHTML = '<div class="empty-state">Loading posts...</div>';
+    }
+
+    const limit = 8;
+    const rangeStart = state.feedPage * limit;
+    const rangeEnd = rangeStart + limit;
+
+    const { data, error } = await selectPostsWithAuthors(rangeStart, rangeEnd);
+    if (error) {
+      console.debug('posts fetch failed:', error);
+      if (!state.posts.length) {
+        state.posts = FALLBACK_DEMO_POSTS;
+      }
+      state.hasMoreFeed = false;
+      renderHomeFeed();
+      state.postLoading = false;
+      return;
+    }
+
+    const pagePosts = (data || []).map(normalizePostRecord);
+    if (pagePosts.length < limit) {
+      state.hasMoreFeed = false;
+    }
+
+    state.posts = state.posts.concat(pagePosts);
+    await refreshFollowingForVisibleFeed();
+    await refreshLikedPostsForVisibleFeed();
+    await loadFeedAffinity();
+    state.posts = scoreFeedPosts(state.posts);
+    renderHomeFeed();
+    state.feedPage += 1;
+    state.postLoading = false;
+    dom.homeLoadMore.hidden = !state.hasMoreFeed;
+    console.debug('posts fetched:', state.posts.length);
+  }
+
   function renderHomeFeed() {
     if (!dom.homeFeed) {
       return;
@@ -1244,11 +1385,14 @@
 
     if (!state.posts.length) {
       dom.homeFeed.innerHTML = `<div class="empty-state">${state.authMode === 'guest' ? 'No public posts are available yet. You can still explore as a guest.' : 'No posts yet. Create the first moment.'}</div>`;
+      dom.homeLoadMore.hidden = true;
       return;
     }
 
     dom.homeFeed.innerHTML = state.posts.map((post) => renderPostCard(post)).join('');
     prepareAutoPlayVideos(dom.homeFeed);
+    dom.homeLoadMore.hidden = !state.hasMoreFeed;
+    console.debug('feed rendered:', state.posts.length);
   }
 
   function renderPostCard(post) {
@@ -1285,15 +1429,24 @@
         </div>
         
         <footer class="post-actions">
-          <button class="action-button ${liked ? 'liked' : ''}" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="${liked ? '#ed4956' : 'none'}" stroke="${liked ? '#ed4956' : 'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-          </button>
-          <button class="action-button" data-action="comment" data-post-id="${normalized.id}">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-          </button>
-          <button class="action-button" data-action="share" data-post-id="${normalized.id}">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          </button>
+          <div class="post-stats">
+            <span>${escapeHtml(String(normalized.like_count || normalized.likes || 0))} likes</span>
+            <span>${escapeHtml(String(normalized.comment_count || normalized.comments || 0))} comments</span>
+          </div>
+          <div class="post-actions-row">
+            <button class="action-button ${liked ? 'liked' : ''}" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="${liked ? '#ed4956' : 'none'}" stroke="${liked ? '#ed4956' : 'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            </button>
+            <button class="action-button" data-action="comment" data-post-id="${normalized.id}">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+            </button>
+            <button class="action-button" data-action="share" data-post-id="${normalized.id}">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+            <button class="action-button" data-action="bookmark" data-post-id="${normalized.id}" title="Save post">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+            </button>
+          </div>
         </footer>
       </article>
     `;
@@ -2304,6 +2457,16 @@
       return;
     }
 
+    if (dom.shareAsStory?.checked && state.authMode === 'user' && state.user && (payload.image_url || payload.media_url)) {
+      await saveStory({
+        user_id: state.user.id,
+        media_url: payload.media_url || payload.image_url,
+        type: payload.type === 'reel' ? 'video' : payload.type === 'image' ? 'image' : 'image',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+      });
+    }
+
     resetCreateForm();
     dom.createModal.hidden = true;
     showToast('Post published successfully.', 'success');
@@ -2464,6 +2627,57 @@
       dom.profileImagePreview.innerHTML = '';
       dom.profileEditForm?.reset();
     }
+
+    if (modalId === 'storyModal') {
+      if (dom.storyVideo) {
+        dom.storyVideo.pause();
+        dom.storyVideo.src = '';
+        dom.storyVideo.hidden = true;
+      }
+      if (dom.storyImage) {
+        dom.storyImage.src = '';
+        dom.storyImage.hidden = true;
+      }
+      if (dom.storyProgressBar) {
+        dom.storyProgressBar.style.width = '0%';
+      }
+    }
+  }
+
+  function openStoryModal({ username, mediaUrl, mediaType }) {
+    if (!dom.storyModal) {
+      return;
+    }
+
+    dom.storyAuthor.textContent = username || 'Story';
+    if (mediaType === 'video') {
+      if (dom.storyImage) {
+        dom.storyImage.hidden = true;
+        dom.storyImage.src = '';
+      }
+      if (dom.storyVideo) {
+        dom.storyVideo.src = mediaUrl;
+        dom.storyVideo.hidden = false;
+        dom.storyVideo.load();
+        dom.storyVideo.play().catch(() => {});
+      }
+    } else {
+      if (dom.storyVideo) {
+        dom.storyVideo.pause();
+        dom.storyVideo.hidden = true;
+        dom.storyVideo.src = '';
+      }
+      if (dom.storyImage) {
+        dom.storyImage.src = mediaUrl;
+        dom.storyImage.hidden = false;
+      }
+    }
+
+    if (dom.storyProgressBar) {
+      dom.storyProgressBar.style.width = '100%';
+    }
+
+    dom.storyModal.hidden = false;
   }
 
   async function subscribeRealtime() {

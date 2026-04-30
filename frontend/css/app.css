@@ -680,11 +680,23 @@ button.primary-button::before {
 
 .post-actions {
     display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.5rem;
+    flex-direction: column;
+    gap: 0.75rem;
     padding: 0.85rem 1rem 1rem;
     border-top: 1px solid rgba(46, 125, 145, 0.08);
+}
+
+.post-stats {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.92rem;
+    color: var(--subtext);
+}
+
+.post-actions-row {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
 }
 
 .action-button {
@@ -1349,6 +1361,45 @@ select:focus {
     background: #fffdfa;
     border: 1px solid rgba(141, 80, 36, 0.12);
     box-shadow: var(--shadow);
+}
+
+.story-modal-card {
+    width: min(100%, 760px);
+    max-width: 760px;
+}
+
+.story-modal-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.story-progress-bar {
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(46, 125, 145, 0.15);
+    overflow: hidden;
+    position: relative;
+}
+
+.story-progress-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 0%;
+    background: linear-gradient(90deg, #54c3ff, #fd5f70);
+    transition: width 0.15s linear;
+}
+
+.story-modal-content {
+    margin-top: 1rem;
+}
+
+.story-modal-content .post-image {
+    max-height: 68vh;
+    border-radius: 20px;
 }
 
 .tab-row {
