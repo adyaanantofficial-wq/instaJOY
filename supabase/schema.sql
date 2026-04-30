@@ -248,6 +248,9 @@ alter table if exists public.posts alter column type set default 'text';
 alter table if exists public.posts alter column type set not null;
 alter table if exists public.posts alter column updated_at set default now();
 alter table if exists public.posts alter column updated_at set not null;
+alter table if exists public.posts add column if not exists mood text not null default 'mixed';
+alter table if exists public.posts add column if not exists is_capsule boolean not null default false;
+alter table if exists public.posts add column if not exists capsule_unlock_at timestamptz;
 
 create index if not exists idx_posts_created_at on public.posts (created_at desc);
 create index if not exists idx_posts_user_id on public.posts (user_id, created_at desc);
@@ -258,6 +261,450 @@ drop trigger if exists set_posts_updated_at on public.posts;
 create trigger set_posts_updated_at
   before update on public.posts
   for each row execute procedure public.set_updated_at();
+
+create table if not exists public.mood_preferences (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  mood text not null,
+  weight numeric not null default 1,
+  updated_at timestamptz not null default now(),
+  unique (user_id, mood)
+);
+
+create index if not exists idx_mood_preferences_user_mood on public.mood_preferences (user_id, mood);
+
+alter table public.mood_preferences enable row level security;
+
+drop policy if exists "Mood preferences self select" on public.mood_preferences;
+create policy "Mood preferences self select" on public.mood_preferences
+  for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+drop policy if exists "Mood preferences self insert" on public.mood_preferences;
+create policy "Mood preferences self insert" on public.mood_preferences
+  for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Mood preferences self update" on public.mood_preferences;
+create policy "Mood preferences self update" on public.mood_preferences
+  for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Mood preferences self delete" on public.mood_preferences;
+create policy "Mood preferences self delete" on public.mood_preferences
+  for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
+create table if not exists public.time_capsules (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.posts(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  unlock_at timestamptz not null,
+  visibility text not null default 'followers',
+  secret_code text,
+  future_message text,
+  status text not null default 'locked',
+  created_at timestamptz not null default now(),
+  constraint time_capsules_status_check check (status in ('locked', 'unlocked', 'cancelled'))
+);
+
+create index if not exists idx_capsule_unlock on public.time_capsules (unlock_at, status);
+
+alter table public.time_capsules enable row level security;
+
+drop policy if exists "Time capsules owner select" on public.time_capsules;
+create policy "Time capsules owner select" on public.time_capsules
+  for select
+  to authenticated
+  using (auth.uid() = owner_id);
+
+drop policy if exists "Time capsules owner insert" on public.time_capsules;
+create policy "Time capsules owner insert" on public.time_capsules
+  for insert
+  to authenticated
+  with check (auth.uid() = owner_id);
+
+drop policy if exists "Time capsules owner update" on public.time_capsules;
+create policy "Time capsules owner update" on public.time_capsules
+  for update
+  to authenticated
+  using (auth.uid() = owner_id and status = 'locked')
+  with check (auth.uid() = owner_id and status = 'locked');
+
+drop policy if exists "Time capsules owner delete" on public.time_capsules;
+create policy "Time capsules owner delete" on public.time_capsules
+  for delete
+  to authenticated
+  using (auth.uid() = owner_id);
+
+create or replace function private.assert_capsule_quota()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  active_capsules int;
+begin
+  select count(*) into active_capsules
+  from public.time_capsules
+  where owner_id = new.owner_id
+    and status = 'locked';
+
+  if active_capsules >= 20 then
+    raise exception 'A single user may not have more than 20 scheduled time capsules at once.';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute on function private.assert_capsule_quota() from public;
+revoke execute on function private.assert_capsule_quota() from anon;
+revoke execute on function private.assert_capsule_quota() from authenticated;
+
+drop trigger if exists enforce_capsule_quota on public.time_capsules;
+create trigger enforce_capsule_quota
+  before insert on public.time_capsules
+  for each row execute procedure private.assert_capsule_quota();
+
+create table if not exists public.story_chains (
+  id uuid primary key default gen_random_uuid(),
+  creator_id uuid not null references auth.users(id) on delete cascade,
+  title text,
+  privacy text not null default 'friends',
+  allow_public boolean not null default false,
+  max_segments int not null default 20,
+  expires_at timestamptz,
+  status text not null default 'active',
+  created_at timestamptz not null default now(),
+  constraint story_chains_privacy_check check (privacy in ('friends', 'private', 'public')),
+  constraint story_chains_status_check check (status in ('active', 'complete', 'expired'))
+);
+
+alter table public.story_chains enable row level security;
+
+drop policy if exists "Story chains public read" on public.story_chains;
+create policy "Story chains public read" on public.story_chains
+  for select
+  using (
+    privacy = 'public'
+    or auth.uid() = creator_id
+    or (privacy = 'friends'
+      and exists (
+        select 1
+        from public.follows
+        where follower_id = auth.uid()
+          and following_id = creator_id
+      ))
+  );
+
+drop policy if exists "Story chains self insert" on public.story_chains;
+create policy "Story chains self insert" on public.story_chains
+  for insert
+  to authenticated
+  with check (auth.uid() = creator_id);
+
+drop policy if exists "Story chains self update" on public.story_chains;
+create policy "Story chains self update" on public.story_chains
+  for update
+  to authenticated
+  using (auth.uid() = creator_id)
+  with check (auth.uid() = creator_id);
+
+drop policy if exists "Story chains self delete" on public.story_chains;
+create policy "Story chains self delete" on public.story_chains
+  for delete
+  to authenticated
+  using (auth.uid() = creator_id);
+
+create table if not exists public.story_chain_segments (
+  id uuid primary key default gen_random_uuid(),
+  chain_id uuid not null references public.story_chains(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  media_url text,
+  caption text,
+  segment_order int,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_story_chain on public.story_chain_segments (chain_id);
+
+alter table public.story_chain_segments enable row level security;
+
+drop policy if exists "Story chain segments public read" on public.story_chain_segments;
+create policy "Story chain segments public read" on public.story_chain_segments
+  for select
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.story_chains c
+      where c.id = chain_id
+        and (
+          c.privacy = 'public'
+          or c.creator_id = auth.uid()
+          or (c.privacy = 'friends'
+            and exists (
+              select 1
+              from public.follows f
+              where f.follower_id = auth.uid()
+                and f.following_id = c.creator_id
+            ))
+        )
+    )
+  );
+
+drop policy if exists "Story chain segments insert own" on public.story_chain_segments;
+create policy "Story chain segments insert own" on public.story_chain_segments
+  for insert
+  to authenticated
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.story_chains c
+      where c.id = chain_id
+        and (
+          c.privacy = 'public'
+          or c.creator_id = auth.uid()
+          or (c.privacy = 'friends'
+            and exists (
+              select 1
+              from public.follows f
+              where f.follower_id = auth.uid()
+                and f.following_id = c.creator_id
+            )
+          )
+        )
+    )
+  );
+
+drop policy if exists "Story chain segments update own" on public.story_chain_segments;
+create policy "Story chain segments update own" on public.story_chain_segments
+  for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Story chain segments delete own" on public.story_chain_segments;
+create policy "Story chain segments delete own" on public.story_chain_segments
+  for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
+create or replace function private.assert_story_chain_cooldown()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  latest_segment timestamptz;
+begin
+  select max(created_at) into latest_segment
+  from public.story_chain_segments
+  where chain_id = new.chain_id
+    and user_id = new.user_id;
+
+  if latest_segment is not null and latest_segment > now() - interval '30 seconds' then
+    raise exception 'You can only add one story chain segment every 30 seconds.';
+  end if;
+
+  if (select count(*) from public.story_chain_segments where chain_id = new.chain_id) >= (select max_segments from public.story_chains where id = new.chain_id) then
+    raise exception 'This story chain already has the maximum number of segments.';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute on function private.assert_story_chain_cooldown() from public;
+revoke execute on function private.assert_story_chain_cooldown() from anon;
+revoke execute on function private.assert_story_chain_cooldown() from authenticated;
+
+drop trigger if exists enforce_story_chain_cooldown on public.story_chain_segments;
+create trigger enforce_story_chain_cooldown
+  before insert on public.story_chain_segments
+  for each row execute procedure private.assert_story_chain_cooldown();
+
+create table if not exists public.post_reactions_v2 (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.posts(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  reaction_type text not null,
+  created_at timestamptz not null default now(),
+  unique (post_id, user_id),
+  constraint post_reactions_v2_type_check check (reaction_type in ('love', 'inspired', 'funny', 'wow', 'useful', 'emotional', 'respect'))
+);
+
+create index if not exists idx_reaction_post on public.post_reactions_v2 (post_id);
+
+create table if not exists public.post_reaction_aggregates (
+  post_id uuid primary key references public.posts(id) on delete cascade,
+  love int not null default 0,
+  inspired int not null default 0,
+  funny int not null default 0,
+  wow int not null default 0,
+  useful int not null default 0,
+  emotional int not null default 0,
+  respect int not null default 0,
+  total int not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_reaction_aggregates_updated on public.post_reaction_aggregates (updated_at desc);
+
+create table if not exists public.feed_cache (
+  id uuid primary key default gen_random_uuid(),
+  cache_key text not null unique,
+  payload jsonb not null default '{}'::jsonb,
+  mood text,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_feed_cache_updated on public.feed_cache (updated_at desc);
+
+create or replace function private.invalidate_feed_cache()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.feed_cache
+  set updated_at = now()
+  where cache_key in ('home', 'explore', 'story');
+
+  return new;
+end;
+$$;
+
+revoke execute on function private.invalidate_feed_cache() from public;
+revoke execute on function private.invalidate_feed_cache() from anon;
+revoke execute on function private.invalidate_feed_cache() from authenticated;
+
+drop trigger if exists invalidate_feed_cache_after_post_insert on public.posts;
+create trigger invalidate_feed_cache_after_post_insert
+  after insert on public.posts
+  for each row execute procedure private.invalidate_feed_cache();
+
+drop trigger if exists invalidate_feed_cache_after_post_update on public.posts;
+create trigger invalidate_feed_cache_after_post_update
+  after update on public.posts
+  for each row execute procedure private.invalidate_feed_cache();
+
+drop trigger if exists invalidate_feed_cache_after_post_delete on public.posts;
+create trigger invalidate_feed_cache_after_post_delete
+  after delete on public.posts
+  for each row execute procedure private.invalidate_feed_cache();
+
+alter table public.post_reaction_aggregates enable row level security;
+
+drop policy if exists "Post reaction aggregates public read" on public.post_reaction_aggregates;
+create policy "Post reaction aggregates public read" on public.post_reaction_aggregates
+  for select
+  using (true);
+
+alter table public.feed_cache enable row level security;
+
+drop policy if exists "Feed cache public read" on public.feed_cache;
+create policy "Feed cache public read" on public.feed_cache
+  for select
+  using (true);
+
+alter table public.post_reactions_v2 enable row level security;
+
+drop policy if exists "Post reactions v2 public read" on public.post_reactions_v2;
+create policy "Post reactions v2 public read" on public.post_reactions_v2
+  for select
+  using (true);
+
+drop policy if exists "Post reactions v2 insert own" on public.post_reactions_v2;
+create policy "Post reactions v2 insert own" on public.post_reactions_v2
+  for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Post reactions v2 update own" on public.post_reactions_v2;
+create policy "Post reactions v2 update own" on public.post_reactions_v2
+  for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Post reactions v2 delete own" on public.post_reactions_v2;
+create policy "Post reactions v2 delete own" on public.post_reactions_v2
+  for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
+create or replace function private.refresh_post_reaction_aggregate()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  trigger_post_id uuid := coalesce(new.post_id, old.post_id);
+begin
+  update public.post_reaction_aggregates
+  set
+    love = coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'love'), 0),
+    inspired = coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'inspired'), 0),
+    funny = coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'funny'), 0),
+    wow = coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'wow'), 0),
+    useful = coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'useful'), 0),
+    emotional = coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'emotional'), 0),
+    respect = coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'respect'), 0),
+    total = (select count(*) from public.post_reactions_v2 where post_id = trigger_post_id),
+    updated_at = now()
+  where post_id = trigger_post_id;
+
+  if not found then
+    insert into public.post_reaction_aggregates (post_id, love, inspired, funny, wow, useful, emotional, respect, total, updated_at)
+    values (
+      trigger_post_id,
+      coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'love'), 0),
+      coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'inspired'), 0),
+      coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'funny'), 0),
+      coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'wow'), 0),
+      coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'useful'), 0),
+      coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'emotional'), 0),
+      coalesce((select count(*) from public.post_reactions_v2 where post_id = trigger_post_id and reaction_type = 'respect'), 0),
+      (select count(*) from public.post_reactions_v2 where post_id = trigger_post_id),
+      now()
+    );
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute on function private.refresh_post_reaction_aggregate() from public;
+revoke execute on function private.refresh_post_reaction_aggregate() from anon;
+revoke execute on function private.refresh_post_reaction_aggregate() from authenticated;
+
+drop trigger if exists refresh_post_reaction_aggregate_after_insert on public.post_reactions_v2;
+create trigger refresh_post_reaction_aggregate_after_insert
+  after insert on public.post_reactions_v2
+  for each row execute procedure private.refresh_post_reaction_aggregate();
+
+drop trigger if exists refresh_post_reaction_aggregate_after_delete on public.post_reactions_v2;
+create trigger refresh_post_reaction_aggregate_after_delete
+  after delete on public.post_reactions_v2
+  for each row execute procedure private.refresh_post_reaction_aggregate();
+
+drop trigger if exists refresh_post_reaction_aggregate_after_update on public.post_reactions_v2;
+create trigger refresh_post_reaction_aggregate_after_update
+  after update on public.post_reactions_v2
+  for each row execute procedure private.refresh_post_reaction_aggregate();
 
 create table if not exists public.stories (
   id uuid primary key default gen_random_uuid(),
@@ -483,7 +930,7 @@ create table if not exists public.notifications (
   read boolean not null default false,
   meta jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  constraint notifications_type_check check (type in ('like', 'comment', 'follow', 'message'))
+  constraint notifications_type_check check (type in ('like', 'comment', 'follow', 'message', 'chain_joined', 'chain_completed', 'capsule', 'capsule_unlocked', 'reaction_received'))
 );
 
 create index if not exists idx_notifications_user_created_at on public.notifications (user_id, created_at desc);
@@ -525,7 +972,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if recipient_id is null or actor_user_id is null or recipient_id = actor_user_id then
+  if recipient_id is null or recipient_id = actor_user_id then
     return;
   end if;
 
@@ -608,6 +1055,34 @@ begin
 end;
 $$;
 
+create or replace function private.notify_post_reaction()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  post_owner_id uuid;
+begin
+  select user_id
+  into post_owner_id
+  from public.posts
+  where id = new.post_id;
+
+  perform private.create_notification(
+    post_owner_id,
+    new.user_id,
+    'reaction_received',
+    'post',
+    new.post_id,
+    'reacted to your post',
+    jsonb_build_object('reaction_type', new.reaction_type)
+  );
+
+  return new;
+end;
+$$;
+
 create or replace function private.notify_new_follow()
 returns trigger
 language plpgsql
@@ -654,12 +1129,69 @@ revoke execute on function private.notify_post_like() from authenticated;
 revoke execute on function private.notify_post_comment() from public;
 revoke execute on function private.notify_post_comment() from anon;
 revoke execute on function private.notify_post_comment() from authenticated;
+revoke execute on function private.notify_post_reaction() from public;
+revoke execute on function private.notify_post_reaction() from anon;
+revoke execute on function private.notify_post_reaction() from authenticated;
 revoke execute on function private.notify_new_follow() from public;
 revoke execute on function private.notify_new_follow() from anon;
 revoke execute on function private.notify_new_follow() from authenticated;
 revoke execute on function private.notify_new_message() from public;
 revoke execute on function private.notify_new_message() from anon;
 revoke execute on function private.notify_new_message() from authenticated;
+
+create or replace function private.notify_chain_segment_added()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  chain_owner uuid;
+begin
+  select creator_id into chain_owner from public.story_chains where id = new.chain_id;
+
+  perform private.create_notification(
+    chain_owner,
+    new.user_id,
+    'chain_joined',
+    'story_chain',
+    new.chain_id,
+    'added a segment to your story chain',
+    jsonb_build_object('segment_id', new.id)
+  );
+
+  return new;
+end;
+$$;
+
+create or replace function private.notify_chain_segment_added()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  chain_owner uuid;
+begin
+  select creator_id into chain_owner from public.story_chains where id = new.chain_id;
+
+  perform private.create_notification(
+    chain_owner,
+    new.user_id,
+    'chain_joined',
+    'story_chain',
+    new.chain_id,
+    'added a segment to your story chain',
+    jsonb_build_object('segment_id', new.id)
+  );
+
+  return new;
+end;
+$$;
+
+revoke execute on function private.notify_chain_segment_added() from public;
+revoke execute on function private.notify_chain_segment_added() from anon;
+revoke execute on function private.notify_chain_segment_added() from authenticated;
 
 drop trigger if exists on_like_created on public.likes;
 create trigger on_like_created
@@ -671,6 +1203,11 @@ create trigger on_comment_created
   after insert on public.comments
   for each row execute procedure private.notify_post_comment();
 
+drop trigger if exists on_reaction_received on public.post_reactions_v2;
+create trigger on_reaction_received
+  after insert on public.post_reactions_v2
+  for each row execute procedure private.notify_post_reaction();
+
 drop trigger if exists on_follow_created on public.follows;
 create trigger on_follow_created
   after insert on public.follows
@@ -681,11 +1218,65 @@ create trigger on_message_created
   after insert on public.messages
   for each row execute procedure private.notify_new_message();
 
+drop trigger if exists on_chain_segment_added on public.story_chain_segments;
+create trigger on_chain_segment_added
+  after insert on public.story_chain_segments
+  for each row execute procedure private.notify_chain_segment_added();
+
+create or replace function private.ensure_chain_completion()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  segment_count int;
+  chain_owner uuid;
+begin
+  select count(*) into segment_count
+  from public.story_chain_segments
+  where chain_id = new.chain_id;
+
+  if segment_count >= (select max_segments from public.story_chains where id = new.chain_id) then
+    update public.story_chains
+    set status = 'complete'
+    where id = new.chain_id and status <> 'complete';
+
+    if found then
+      select creator_id into chain_owner from public.story_chains where id = new.chain_id;
+      perform private.create_notification(
+        chain_owner,
+        new.user_id,
+        'chain_completed',
+        'story_chain',
+        new.chain_id,
+        'completed the story chain',
+        jsonb_build_object('segment_id', new.id)
+      );
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute on function private.ensure_chain_completion() from public;
+revoke execute on function private.ensure_chain_completion() from anon;
+revoke execute on function private.ensure_chain_completion() from authenticated;
+
+drop trigger if exists on_chain_completed on public.story_chain_segments;
+create trigger on_chain_completed
+  after insert on public.story_chain_segments
+  for each row execute procedure private.ensure_chain_completion();
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('avatars', 'avatars', true, 200000, array['image/jpeg', 'image/png', 'image/webp']),
   ('post-images', 'post-images', true, 200000, array['image/jpeg', 'image/png', 'image/webp']),
-  ('reel-videos', 'reel-videos', true, 1000000, array['video/mp4', 'video/webm', 'video/ogg'])
+  ('reel-videos', 'reel-videos', true, 1000000, array['video/mp4', 'video/webm', 'video/ogg']),
+  ('post-media', 'post-media', true, 1000000, array['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/ogg']),
+  ('story-chain', 'story-chain', true, 1000000, array['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/ogg']),
+  ('capsule-media', 'capsule-media', true, 1000000, array['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/ogg'])
 on conflict (id) do update
 set
   public = excluded.public,
@@ -695,14 +1286,14 @@ set
 drop policy if exists "Public media read" on storage.objects;
 create policy "Public media read" on storage.objects
   for select
-  using (bucket_id in ('avatars', 'post-images', 'reel-videos'));
+  using (bucket_id in ('avatars', 'post-images', 'reel-videos', 'post-media', 'story-chain', 'capsule-media'));
 
 drop policy if exists "Users upload own media" on storage.objects;
 create policy "Users upload own media" on storage.objects
   for insert
   to authenticated
   with check (
-    bucket_id in ('avatars', 'post-images', 'reel-videos')
+    bucket_id in ('avatars', 'post-images', 'reel-videos', 'post-media', 'story-chain', 'capsule-media')
     and auth.uid()::text = (storage.foldername(name))[1]
   );
 
@@ -711,11 +1302,11 @@ create policy "Users update own media" on storage.objects
   for update
   to authenticated
   using (
-    bucket_id in ('avatars', 'post-images', 'reel-videos')
+    bucket_id in ('avatars', 'post-images', 'reel-videos', 'post-media', 'story-chain', 'capsule-media')
     and auth.uid()::text = (storage.foldername(name))[1]
   )
   with check (
-    bucket_id in ('avatars', 'post-images', 'reel-videos')
+    bucket_id in ('avatars', 'post-images', 'reel-videos', 'post-media', 'story-chain', 'capsule-media')
     and auth.uid()::text = (storage.foldername(name))[1]
   );
 
@@ -724,7 +1315,7 @@ create policy "Users delete own media" on storage.objects
   for delete
   to authenticated
   using (
-    bucket_id in ('avatars', 'post-images', 'reel-videos')
+    bucket_id in ('avatars', 'post-images', 'reel-videos', 'post-media', 'story-chain', 'capsule-media')
     and auth.uid()::text = (storage.foldername(name))[1]
   );
 

@@ -55,6 +55,13 @@
                         <div class="view-intro home-intro">
                            
                         </div>
+                        <section class="mood-panel">
+                            <div id="moodSelector" class="mood-selector"></div>
+                            <div class="mood-row">
+                                <div id="moodLabel" class="mood-label">Because you're in Mixed mood</div>
+                                <div id="homeActionBar" class="home-action-bar"></div>
+                            </div>
+                        </section>
                         <section id="storiesStrip" class="stories-strip"></section>
                         <div class="home-feed-panel">
                             
@@ -210,6 +217,49 @@
                 <button class="tab-button" type="button" data-create-type="image">Image</button>
                 <button class="tab-button" type="button" data-create-type="reel">Reel</button>
             </div>
+            <div class="capsule-action-row" id="capsuleActions"></div>
+            <div id="capsulePanel" class="capsule-panel hidden">
+                <div class="panel-header capsule-header">
+                    <div>
+                        <h4>Time Capsule</h4>
+                        <p>Lock a future memory for yourself or followers.</p>
+                    </div>
+                    <span class="capsule-badge">Premium</span>
+                </div>
+                <div class="form-stack capsule-fields">
+                    <label>
+                        Release date
+                        <select id="capsuleUnlock" name="capsuleUnlock">
+                            <option value="tomorrow">Tomorrow</option>
+                            <option value="one_week">1 week</option>
+                            <option value="one_month">1 month</option>
+                            <option value="birthday">Birthday</option>
+                            <option value="anniversary">Anniversary</option>
+                            <option value="custom">Custom date</option>
+                        </select>
+                    </label>
+                    <label class="capsule-custom-date hidden" id="capsuleCustomDateRow">
+                        Pick a date
+                        <input id="capsuleCustomDate" name="capsuleCustomDate" type="date">
+                    </label>
+                    <label>
+                        Secret unlock code
+                        <input id="capsuleSecret" name="capsuleSecret" type="text" maxlength="40" placeholder="Optional code for later reveal">
+                    </label>
+                    <label>
+                        Private note to future self
+                        <textarea id="capsuleMessage" name="capsuleMessage" rows="3" maxlength="280" placeholder="Write a short message to unlock later."></textarea>
+                    </label>
+                    <label class="checkbox-row">
+                        <input id="capsuleNotify" name="capsuleNotify" type="checkbox">
+                        <span>Notify followers when it unlocks</span>
+                    </label>
+                    <label class="checkbox-row">
+                        <input id="capsulePrivate" name="capsulePrivate" type="checkbox">
+                        <span>Keep this capsule private until unlock</span>
+                    </label>
+                </div>
+            </div>
             <form id="createForm" class="form-stack">
                 <div id="textFields" class="form-stack">
                     <label>
@@ -260,6 +310,74 @@
 
                 <button id="createSubmit" class="primary-button" type="submit">Publish</button>
             </form>
+        </div>
+    </div>
+
+    <div id="capsuleModal" class="modal-shell" hidden>
+        <div class="modal-card capsule-modal-card">
+            <div class="panel-header">
+                <div>
+                    <h3>Time Capsule</h3>
+                    <p>Set a future unlock date, add a private message, and keep the reveal cinematic.</p>
+                </div>
+                <button data-close-modal="capsuleModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <div class="capsule-modal-body">
+                <div class="capsule-preview">
+                    <div class="capsule-gold-ring"></div>
+                    <div class="capsule-details">
+                        <strong>Make this memory feel special.</strong>
+                        <p>Choose when it arrives and whether the reveal is public or private.</p>
+                    </div>
+                </div>
+                <div class="capsule-actions-panel" id="capsuleControls"></div>
+                <div class="capsule-hint">Your capsule is encrypted before storage and will count down visibly in your feed.</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="chainModal" class="modal-shell" hidden>
+        <div class="modal-card chain-modal-card">
+            <div class="panel-header">
+                <div class="chain-modal-title">
+                    <strong class="chain-title">Group Story Chain</strong>
+                    <div id="chainProgressBar" class="chain-progress-bar"></div>
+                </div>
+                <button data-close-modal="chainModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <div class="chain-modal-body">
+                <div id="chainStatus" class="status-text">Start a new collaborative story chain with friends.</div>
+                <div class="chain-avatars" id="chainAvatars"></div>
+                <div id="chainSetupPanel" class="chain-setup">
+                    <label>
+                        Chain title
+                        <input id="chainTitle" type="text" maxlength="80" placeholder="Weekend adventure chain">
+                    </label>
+                    <label>
+                        Segment caption
+                        <input id="chainCaption" type="text" maxlength="140" placeholder="Add context for your chapter">
+                    </label>
+                    <label>
+                        Segment media
+                        <input id="chainFileInput" type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/ogg">
+                    </label>
+                    <label>
+                        Privacy
+                        <select id="chainPrivacy">
+                            <option value="public">Open join</option>
+                            <option value="friends">Friends only</option>
+                            <option value="private">Private</option>
+                        </select>
+                    </label>
+                    <div id="chainSegmentPreview" class="media-preview" hidden></div>
+                </div>
+                <div id="chainDetails" class="chain-details"></div>
+                <div class="chain-actions">
+                    <button class="primary-button" type="button" data-action="add-segment">➕ Add segment</button>
+                    <button class="secondary-button" type="button" data-action="save-chain">🔖 Save chain</button>
+                    <button class="secondary-button" type="button" data-action="share-chain">↗ Share</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -324,6 +442,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.12.1/firebase-messaging-compat.js"></script>
     <script src="frontend/js/firebaseClient.js"></script>
+    <script src="frontend/js/moodEngine.js"></script>
+    <script src="frontend/js/reactionEngine.js"></script>
+    <script src="frontend/js/capsuleEngine.js"></script>
+    <script src="frontend/js/storyChainEngine.js"></script>
         <script>
             // Safety stub: some legacy scripts may call `loadHomeFeed` before
             // the main app attaches it. Provide a no-op placeholder to avoid

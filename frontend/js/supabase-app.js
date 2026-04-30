@@ -79,6 +79,7 @@
     postLoading: false,
     reelLoading: false,
     currentCommentPostId: null,
+    storyChain: null,
     suggestionsVisible: true,
     feedAffinity: {
       likedCategories: new Set(),
@@ -197,12 +198,32 @@
     dom.reelHint = document.getElementById('reelHint');
     dom.reelPreview = document.getElementById('reelPreview');
     dom.shareAsStory = document.getElementById('shareAsStory');
+    dom.capsuleActions = document.getElementById('capsuleActions');
+    dom.capsulePanel = document.getElementById('capsulePanel');
+    dom.capsuleUnlock = document.getElementById('capsuleUnlock');
+    dom.capsuleCustomDateRow = document.getElementById('capsuleCustomDateRow');
+    dom.capsuleCustomDate = document.getElementById('capsuleCustomDate');
+    dom.capsuleSecret = document.getElementById('capsuleSecret');
+    dom.capsuleMessage = document.getElementById('capsuleMessage');
+    dom.capsuleNotify = document.getElementById('capsuleNotify');
+    dom.capsulePrivate = document.getElementById('capsulePrivate');
     dom.commentsModal = document.getElementById('commentsModal');
     dom.storyModal = document.getElementById('storyModal');
     dom.storyVideo = document.getElementById('storyVideo');
     dom.storyImage = document.getElementById('storyImage');
     dom.storyProgressBar = document.getElementById('storyProgressBar');
     dom.storyAuthor = document.getElementById('storyAuthor');
+    dom.chainModal = document.getElementById('chainModal');
+    dom.chainAvatars = document.getElementById('chainAvatars');
+    dom.chainStatus = document.getElementById('chainStatus');
+    dom.chainTitle = document.getElementById('chainTitle');
+    dom.chainCaption = document.getElementById('chainCaption');
+    dom.chainPrivacy = document.getElementById('chainPrivacy');
+    dom.chainFileInput = document.getElementById('chainFileInput');
+    dom.chainSegmentPreview = document.getElementById('chainSegmentPreview');
+    dom.chainSetupPanel = document.getElementById('chainSetupPanel');
+    dom.chainDetails = document.getElementById('chainDetails');
+    dom.chainProgressBar = document.getElementById('chainProgressBar');
     dom.commentsList = document.getElementById('commentsList');
     dom.commentForm = document.getElementById('commentForm');
     dom.commentInput = document.getElementById('commentInput');
@@ -244,6 +265,8 @@
     dom.createForm?.addEventListener('submit', handleCreatePost);
     dom.imageInput?.addEventListener('change', handleImageSelection);
     dom.reelInput?.addEventListener('change', handleReelSelection);
+    dom.chainFileInput?.addEventListener('change', handleChainFileSelection);
+    dom.capsuleUnlock?.addEventListener('change', handleCapsuleUnlockChange);
     dom.commentForm?.addEventListener('submit', handleCommentSubmit);
     dom.markAllNotifications?.addEventListener('click', markAllNotificationsRead);
     dom.messagesRefresh?.addEventListener('click', () => loadConversations(true));
@@ -338,7 +361,28 @@
     renderHomeSidebarProfile();
     updateWriteAccessUi();
     updateTopbarAction();
+
+    if (window.MoodEngine?.buildMoodSelector) {
+      window.MoodEngine.buildMoodSelector('moodSelector', 'moodLabel', refreshMoodFeed);
+    }
+
+    if (window.CapsuleEngine?.buildCapsuleControls) {
+      window.CapsuleEngine.buildCapsuleControls('capsuleActions', setCapsuleAction);
+      setCapsuleAction('now');
+    }
+
+    if (window.StoryChainEngine?.buildChainButton) {
+      window.StoryChainEngine.buildChainButton('homeActionBar', () => {
+        openStoryChainModal();
+      });
+    }
+
     renderView(normalizeViewName(window.location.hash.replace(/^#/, '')));
+    const initialChainId = new URLSearchParams(window.location.search).get('chain');
+    if (initialChainId) {
+      await openStoryChainModal(initialChainId);
+    }
+
     await hydrateActiveView(true);
   }
 
@@ -747,6 +791,21 @@
         avatar_url: avatarUrl || DEFAULT_AVATAR,
         display_name: displayName || username || 'member',
       });
+      return;
+    }
+
+    if (action === 'add-segment') {
+      dom.chainFileInput?.click();
+      return;
+    }
+
+    if (action === 'save-chain') {
+      await saveStoryChainFromModal();
+      return;
+    }
+
+    if (action === 'share-chain') {
+      await shareStoryChain();
       return;
     }
 
@@ -1256,6 +1315,270 @@
     return { ok: true };
   }
 
+  async function fetchStoryChain(chainId) {
+    if (!chainId) {
+      return { ok: false, error: new Error('Missing chain id.') };
+    }
+
+    const { data, error } = await supabase
+      .from('story_chains')
+      .select('*, creator:profiles(id, username, avatar_url), segments:story_chain_segments(*, user:profiles(id, username, avatar_url))')
+      .eq('id', chainId)
+      .single();
+
+    if (error) {
+      return { ok: false, error };
+    }
+
+    return { ok: true, chain: normalizeStoryChainRecord(data) };
+  }
+
+  function normalizeStoryChainRecord(record) {
+    const segments = Array.isArray(record?.segments) ? record.segments.map((segment, index) => ({
+      id: segment.id,
+      user_id: segment.user_id,
+      username: segment.user?.username || segment.username || 'anonymous',
+      avatar_url: segment.user?.avatar_url || DEFAULT_AVATAR,
+      media_url: segment.media_url || '',
+      caption: segment.caption || '',
+      type: segment.media_url?.endsWith('.mp4') ? 'video' : 'image',
+      status: 'Live',
+      created_at: segment.created_at,
+      segment_order: segment.segment_order || index + 1,
+    })) : [];
+
+    const participants = [...new Map((segments || []).map((segment) => [segment.user_id, {
+      username: segment.username,
+      avatar_url: segment.avatar_url,
+    }]))].map(([, value]) => value);
+
+    return {
+      id: record.id,
+      title: record.title || 'Story Chain',
+      creator_id: record.creator_id,
+      creator: record.creator || {},
+      privacy: record.privacy || 'public',
+      allow_public: record.allow_public || false,
+      max_segments: record.max_segments || 20,
+      status: record.status || (segments.length >= (record.max_segments || 20) ? 'Complete' : 'Live'),
+      expires_at: record.expires_at,
+      created_at: record.created_at,
+      segments,
+      participants,
+    };
+  }
+
+  function renderStoryChainModal() {
+    if (!dom.chainModal) {
+      return;
+    }
+
+    const chain = state.storyChain || {
+      title: 'New Group Story Chain',
+      privacy: 'public',
+      allow_public: true,
+      max_segments: 20,
+      segments: [],
+      participants: [],
+      status: 'Draft',
+    };
+
+    dom.chainTitle.value = chain.title || 'New Group Story Chain';
+    dom.chainPrivacy.value = chain.privacy || 'public';
+    dom.chainCaption.value = '';
+    dom.chainFileInput.value = '';
+    dom.chainSegmentPreview.hidden = true;
+    dom.chainSegmentPreview.innerHTML = '';
+    dom.chainStatus.textContent = chain.status === 'Complete'
+      ? 'This chain is complete. Add another chapter to reopen it.'
+      : chain.segments.length
+        ? `${chain.segments.length} segment(s) in progress • ${chain.privacy === 'private' ? 'Private' : chain.privacy === 'friends' ? 'Friends only' : 'Open join'}`
+        : 'Start a new collaborative story chain with friends.';
+
+    if (chain.segments.length && window.StoryChainEngine?.renderChainViewer) {
+      window.StoryChainEngine.renderChainViewer('chainModal', chain);
+    } else if (window.StoryChainEngine?.renderChainViewer) {
+      window.StoryChainEngine.renderChainViewer('chainModal', chain);
+    } else {
+      dom.chainModal.hidden = false;
+    }
+  }
+
+  async function openStoryChainModal(chainId = null) {
+    state.storyChain = null;
+
+    if (chainId) {
+      const result = await fetchStoryChain(chainId);
+      if (!result.ok) {
+        showToast('Unable to load the story chain.', 'error');
+        return;
+      }
+      state.storyChain = result.chain;
+    } else {
+      state.storyChain = {
+        id: null,
+        title: 'New Group Story Chain',
+        creator_id: state.user?.id || null,
+        creator: {
+          username: state.user?.user_metadata?.username || 'You',
+          avatar_url: state.user?.user_metadata?.avatar_url || DEFAULT_AVATAR,
+        },
+        privacy: 'public',
+        allow_public: true,
+        max_segments: 20,
+        status: 'Draft',
+        segments: [],
+        participants: [],
+      };
+    }
+
+    renderStoryChainModal();
+  }
+
+  async function handleChainFileSelection(event) {
+    const file = event.target?.files?.[0];
+    if (!file || !dom.chainSegmentPreview) {
+      return;
+    }
+
+    dom.chainSegmentPreview.hidden = false;
+    dom.chainSegmentPreview.innerHTML = `
+      <div class="status-text">Selected segment: ${escapeHtml(file.name)} (${Math.round(file.size / 1024)} KB)</div>
+    `;
+  }
+
+  async function saveStoryChainSegment(chainId, file, caption) {
+    if (state.authMode !== 'user' || !state.user?.id) {
+      return { ok: false, error: new Error('You must be signed in to save story chain segments.') };
+    }
+
+    if (!chainId || !file) {
+      return { ok: false, error: new Error('Missing chain or file data.') };
+    }
+
+    const countResponse = await supabase
+      .from('story_chain_segments')
+      .select('id', { count: 'exact', head: true })
+      .eq('chain_id', chainId);
+    const segmentOrder = (countResponse.count || 0) + 1;
+
+    const uploadResult = await uploadFile(file, 'story-chain');
+    if (uploadResult.error) {
+      return { ok: false, error: uploadResult.error };
+    }
+
+    const { error } = await supabase.from('story_chain_segments').insert([{
+      chain_id: chainId,
+      user_id: state.user?.id,
+      media_url: uploadResult.publicUrl,
+      caption: caption || null,
+      segment_order: segmentOrder,
+      created_at: new Date().toISOString(),
+    }]);
+
+    if (error) {
+      return { ok: false, error };
+    }
+
+    return { ok: true };
+  }
+
+  async function saveStoryChainFromModal() {
+    if (state.authMode !== 'user' || !state.user?.id) {
+      showToast('Sign in to save story chains and upload media.', 'error');
+      return;
+    }
+
+    const file = dom.chainFileInput?.files?.[0];
+    const title = dom.chainTitle?.value?.trim() || 'Group Story Chain';
+    const privacy = dom.chainPrivacy?.value || 'public';
+    const caption = dom.chainCaption?.value?.trim() || null;
+    const allowPublic = privacy === 'public';
+    let chainId = state.storyChain?.id || null;
+
+    if (!chainId && !file) {
+      showToast('Attach a media segment to start the story chain.', 'error');
+      return;
+    }
+
+    if (!chainId) {
+      const { data, error } = await supabase.from('story_chains').insert([{
+        creator_id: state.user?.id,
+        title,
+        privacy,
+        allow_public: allowPublic,
+        max_segments: 20,
+        expires_at: null,
+        created_at: new Date().toISOString(),
+      }]).select('id').single();
+
+      if (error || !data?.id) {
+        showToast('Could not create story chain. Try again.', 'error');
+        return;
+      }
+
+      chainId = data.id;
+    } else {
+      const { error } = await supabase.from('story_chains').update({
+        title,
+        privacy,
+        allow_public: allowPublic,
+      }).eq('id', chainId);
+
+      if (error) {
+        showToast('Could not update story chain settings.', 'error');
+        return;
+      }
+    }
+
+    if (file) {
+      const segmentResult = await saveStoryChainSegment(chainId, file, caption);
+      if (!segmentResult.ok) {
+        showToast('Could not save the story segment. Try again.', 'error');
+        return;
+      }
+    }
+
+    const result = await fetchStoryChain(chainId);
+    if (result.ok) {
+      state.storyChain = result.chain;
+      renderStoryChainModal();
+      await loadHomeStories();
+      showToast('Story chain updated successfully.', 'success');
+    } else {
+      showToast('Story chain saved, but could not reload it yet.', 'warning');
+      renderStoryChainModal();
+    }
+  }
+
+  async function shareStoryChain() {
+    if (!state.storyChain?.id) {
+      showToast('Save the chain first to share it.', 'info');
+      return;
+    }
+
+    const shareUrl = `${window.location.origin}${window.location.pathname}?chain=${encodeURIComponent(state.storyChain.id)}`;
+    const shareText = `Join my instaJOY story chain: ${shareUrl}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Join my story chain', text: shareText, url: shareUrl });
+        showToast('Share dialog opened.', 'success');
+        return;
+      }
+
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareText);
+        showToast('Chain link copied to clipboard.', 'success');
+        return;
+      }
+
+      throw new Error('Sharing is not supported in this browser.');
+    } catch (error) {
+      showToast('Could not share story chain right now.', 'error');
+    }
+  }
+
   async function loadFeedAffinity() {
     state.feedAffinity = {
       likedCategories: new Set(),
@@ -1290,8 +1613,9 @@
   }
 
   function scoreFeedPosts(posts) {
+    const activeMood = window.MoodEngine?.getSavedMood?.() || 'mixed';
     return [...posts].sort((left, right) => {
-      const score = (post) => {
+      const affinityScore = (post) => {
         let value = 0;
         if (state.followingUserIds.has(post.user_id)) {
           value += 100;
@@ -1305,13 +1629,42 @@
         return value;
       };
 
-      const a = score(left);
-      const b = score(right);
+      const moodBoost = window.MoodEngine?.getMoodScoreForPost?.(left, activeMood, state.feedAffinity) || 0;
+      const moodBoostRight = window.MoodEngine?.getMoodScoreForPost?.(right, activeMood, state.feedAffinity) || 0;
+      const a = affinityScore(left) + moodBoost * 4;
+      const b = affinityScore(right) + moodBoostRight * 4;
       if (a !== b) {
         return b - a;
       }
       return new Date(right.created_at) - new Date(left.created_at);
     });
+  }
+
+  function refreshMoodFeed() {
+    if (!state.posts.length) {
+      return;
+    }
+    state.posts = scoreFeedPosts(state.posts);
+    renderHomeFeed();
+  }
+
+  function setCapsuleAction(action) {
+    if (!dom.capsulePanel) {
+      return;
+    }
+
+    const showPanel = action === 'capsule' || action === 'schedule';
+    dom.capsulePanel.hidden = !showPanel;
+    if (!showPanel && dom.capsuleCustomDateRow) {
+      dom.capsuleCustomDateRow.hidden = true;
+    }
+  }
+
+  function handleCapsuleUnlockChange() {
+    if (!dom.capsuleUnlock || !dom.capsuleCustomDateRow) {
+      return;
+    }
+    dom.capsuleCustomDateRow.hidden = dom.capsuleUnlock.value !== 'custom';
   }
 
   async function refreshFollowingForVisibleFeed() {

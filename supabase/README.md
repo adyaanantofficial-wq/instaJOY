@@ -21,7 +21,11 @@ This folder contains the Supabase PostgreSQL schema and Edge Function samples fo
 3. Create Storage buckets:
    - `post-images`
    - `reel-videos`
-4. Deploy Edge Functions with `supabase functions deploy notify` and `supabase functions deploy logAnalytics`.
+   - `post-media`
+   - `story-chain`
+   - `capsule-media`
+4. Deploy Edge Functions with `supabase functions deploy notify`, `supabase functions deploy logAnalytics`, and `supabase functions deploy unlock-capsules`.
+   - Configure a scheduled cron or Supabase function scheduler to POST to `/functions/v1/unlock-capsules` every 5 minutes.
 5. Add environment variables in Supabase:
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `FIREBASE_SERVER_KEY`

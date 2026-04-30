@@ -10,8 +10,9 @@
 
 ## Supabase
 - [ ] Apply `supabase/schema.sql` to the database.
-- [ ] Create `post-images` and `reel-videos` storage buckets.
+- [ ] Create `post-images`, `reel-videos`, `post-media`, `story-chain`, and `capsule-media` storage buckets.
 - [ ] Deploy Edge Functions and verify environment variables are set.
+- [ ] Deploy `unlock-capsules` and schedule it to run every 5 minutes.
 - [ ] Test `notify` function with a known user ID and notification payload.
 - [ ] Test realtime subscriptions on `posts`, `likes`, and `comments`.
 
