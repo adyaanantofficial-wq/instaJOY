@@ -96,6 +96,7 @@
       reel: '',
       avatar: '',
     },
+    postReactions: {},
   };
 
   const dom = {};
@@ -735,6 +736,22 @@
 
     if (action === 'toggle-like' && postId) {
       toggleLike(postId);
+      return;
+    }
+
+    if (action === 'react' && postId) {
+      if (state.authMode !== 'user') {
+        showToast('Sign in to react to posts.', 'error');
+        return;
+      }
+      if (window.ReactionEngine?.renderRadialMenu) {
+        window.ReactionEngine.renderRadialMenu(postId, actionButton, (reactionKey) => {
+          setPostReaction(postId, reactionKey);
+          const reaction = window.ReactionEngine.getReaction(reactionKey);
+          showToast(`Reacted with ${reaction.label}.`, 'success');
+          renderHomeFeed(false);
+        });
+      }
       return;
     }
 
@@ -1816,6 +1833,8 @@
     const createdAt = new Date(normalized.created_at).toLocaleString();
     const liked = state.likedPostIds.has(normalized.id);
     const likeDisabled = state.authMode !== 'user';
+    const currentReaction = getPostReaction(normalized.id);
+    const activeReaction = currentReaction ? window.ReactionEngine?.getReaction(currentReaction.reaction) : null;
     const copy = normalized.type === 'text' ? normalized.content || normalized.caption || '' : normalized.caption || normalized.content || '';
     const media = normalized.type === 'reel'
       ? (normalized.media_url ? `<video controls preload="metadata" muted loop playsinline data-auto-play-video src="${escapeHtml(normalized.media_url)}" class="post-image reel-video"></video>` : '')
@@ -1842,7 +1861,9 @@
         
         <div class="post-body">
           ${normalized.category ? `<span class="post-chip" style="margin-bottom:8px; display:inline-block;">${escapeHtml(normalized.category)}</span><br>` : ''}
+          ${normalized.mood ? `<span class="post-chip mood-chip" style="margin-bottom:8px; display:inline-block;">${escapeHtml(normalized.mood)}</span>` : ''}
           <strong>${escapeHtml(author.username || 'anonymous')}</strong> ${escapeHtml(copy)}
+          ${renderPostReactionSummary(normalized.id)}
         </div>
         
         <footer class="post-actions">
@@ -1854,10 +1875,10 @@
             <button class="action-button ${liked ? 'liked' : ''}" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="${liked ? '#ed4956' : 'none'}" stroke="${liked ? '#ed4956' : 'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
             </button>
-            <button class="action-button" data-action="comment" data-post-id="${normalized.id}">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+            <button class="action-button ${activeReaction ? 'reacted' : ''}" data-action="react" data-post-id="${normalized.id}" ${state.authMode !== 'user' ? 'disabled' : ''} title="${activeReaction ? `Reacted ${escapeHtml(activeReaction.label)}` : 'React'}">
+              ${activeReaction ? `<span class="reaction-icon">${escapeHtml(activeReaction.emoji)}</span>` : `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5l1.5 1.5L14 10"/><path d="M6 21c0-4.97 4.03-9 9-9h0c4.97 0 9 4.03 9 9"/></svg>`}
             </button>
-            <button class="action-button" data-action="share" data-post-id="${normalized.id}">
+            <button class="action-button" data-action="comment" data-post-id="${normalized.id}">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>
             <button class="action-button" data-action="bookmark" data-post-id="${normalized.id}" title="Save post">
@@ -1867,6 +1888,32 @@
         </footer>
       </article>
     `;
+  }
+
+  function getPostReaction(postId) {
+    return state.postReactions[postId] || null;
+  }
+
+  function setPostReaction(postId, reactionKey) {
+    if (!postId || !reactionKey) {
+      return;
+    }
+    state.postReactions = {
+      ...state.postReactions,
+      [postId]: { reaction: reactionKey, updated_at: new Date().toISOString() },
+    };
+  }
+
+  function renderPostReactionSummary(postId) {
+    const reactionState = getPostReaction(postId);
+    if (!reactionState?.reaction) {
+      return '';
+    }
+    const reaction = window.ReactionEngine?.getReaction(reactionState.reaction);
+    if (!reaction) {
+      return '';
+    }
+    return `<div class="post-reaction-summary">Reacted with <strong>${escapeHtml(reaction.emoji)} ${escapeHtml(reaction.label)}</strong></div>`;
   }
 
   async function toggleLike(postId) {
@@ -2824,6 +2871,7 @@
         return;
       }
       payload.category = dom.textCategory?.value || null;
+      payload.mood = dom.postMood?.value || 'mixed';
       payload.content = content;
       payload.caption = content;
     }
@@ -2834,6 +2882,7 @@
         showToast('Choose an image before publishing.', 'error');
         return;
       }
+      payload.mood = dom.postMood?.value || 'mixed';
       if (imageFile.size > MAX_IMAGE_BYTES) {
         showToast('Images must be 200KB or smaller.', 'error');
         return;
@@ -3549,34 +3598,35 @@
   }
 
   function buildPostInsertVariants(payload) {
+    const moodField = payload.mood ? { mood: payload.mood } : {};
     if (payload.type === 'text') {
       const text = payload.content || payload.caption || '';
       return [
-        { user_id: payload.user_id, type: 'text', category: payload.category, content: text, caption: text },
-        { type: 'text', category: payload.category, content: text, caption: text },
-        { user_id: payload.user_id, type: 'text', content: text, caption: text },
-        { type: 'text', content: text, caption: text },
-        { user_id: payload.user_id, content: text, caption: text },
-        { content: text, caption: text },
-        { user_id: payload.user_id, caption: text },
-        { caption: text },
+        { user_id: payload.user_id, type: 'text', category: payload.category, content: text, caption: text, ...moodField },
+        { type: 'text', category: payload.category, content: text, caption: text, ...moodField },
+        { user_id: payload.user_id, type: 'text', content: text, caption: text, ...moodField },
+        { type: 'text', content: text, caption: text, ...moodField },
+        { user_id: payload.user_id, content: text, caption: text, ...moodField },
+        { content: text, caption: text, ...moodField },
+        { user_id: payload.user_id, caption: text, ...moodField },
+        { caption: text, ...moodField },
       ];
     }
 
     if (payload.type === 'image') {
       return [
-        { user_id: payload.user_id, type: 'image', caption: payload.caption, image_url: payload.image_url },
-        { type: 'image', caption: payload.caption, image_url: payload.image_url },
-        { user_id: payload.user_id, caption: payload.caption, image_url: payload.image_url },
-        { caption: payload.caption, image_url: payload.image_url },
+        { user_id: payload.user_id, type: 'image', caption: payload.caption, image_url: payload.image_url, ...moodField },
+        { type: 'image', caption: payload.caption, image_url: payload.image_url, ...moodField },
+        { user_id: payload.user_id, caption: payload.caption, image_url: payload.image_url, ...moodField },
+        { caption: payload.caption, image_url: payload.image_url, ...moodField },
       ];
     }
 
     return [
-      { user_id: payload.user_id, type: 'reel', caption: payload.caption, media_url: payload.media_url },
-      { type: 'reel', caption: payload.caption, media_url: payload.media_url },
-      { user_id: payload.user_id, caption: payload.caption, media_url: payload.media_url },
-      { caption: payload.caption, media_url: payload.media_url },
+      { user_id: payload.user_id, type: 'reel', caption: payload.caption, media_url: payload.media_url, ...moodField },
+      { type: 'reel', caption: payload.caption, media_url: payload.media_url, ...moodField },
+      { user_id: payload.user_id, caption: payload.caption, media_url: payload.media_url, ...moodField },
+      { caption: payload.caption, media_url: payload.media_url, ...moodField },
     ];
   }
 
@@ -3599,11 +3649,12 @@
       || isMissingPostColumnError(error, 'type')
       || isMissingPostColumnError(error, 'category')
       || isMissingPostColumnError(error, 'content')
+      || isMissingPostColumnError(error, 'mood')
       || isMissingPostColumnError(error, 'media_url');
   }
 
   function isRecoverablePostInsertError(error, postType, variant) {
-    if (isMissingPostColumnError(error, 'type') || isMissingPostColumnError(error, 'category') || isMissingPostColumnError(error, 'content')) {
+    if (isMissingPostColumnError(error, 'type') || isMissingPostColumnError(error, 'category') || isMissingPostColumnError(error, 'content') || isMissingPostColumnError(error, 'mood')) {
       return true;
     }
 

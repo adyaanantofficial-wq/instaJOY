@@ -21,9 +21,12 @@
     const container = document.getElementById(containerId);
     if (!container) return;
 
+    container.querySelectorAll('.story-chain-card').forEach((node) => node.remove());
+
     const button = document.createElement('button');
     button.className = 'story-card story-chain-card';
     button.type = 'button';
+    button.setAttribute('aria-label', 'Create chain story');
     button.innerHTML = `
       <div class="story-chain-ring">
         <span class="story-chain-icon">➕</span>
