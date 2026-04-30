@@ -795,6 +795,7 @@
     dom.landingPage.hidden = true;
     dom.appShell.hidden = false;
     dom.bottomNav.hidden = false;
+    dom.authView.hidden = true;
     renderView(viewName || 'home');
     await hydrateActiveView(true);
   }
