@@ -986,28 +986,37 @@
   }
 
   async function ensureCurrentUserProfile() {
-    if (!state.user) {
+    const currentUser = state.user;
+    if (!currentUser) {
       return { ok: false, message: 'No active user session.' };
     }
 
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', state.user.id).maybeSingle();
+    if (!currentUser.id) {
+      return { ok: false, message: 'Current user session is invalid.' };
+    }
+
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
     if (data) {
       state.capabilities.profilesTable = 'available';
       state.profile = data;
-      state.user.profile = data;
+      if (state.user && state.user.id === currentUser.id) {
+        state.user.profile = data;
+      }
       state.profileUsername = data.username;
-      state.profileUserId = data.id || state.user.id;
+      state.profileUserId = data.id || currentUser.id;
       sessionStorage.removeItem(PENDING_PROFILE_KEY);
       return { ok: true };
     }
 
     if (isProfilesSetupCompatibilityError(error)) {
       state.capabilities.profilesTable = 'missing';
-      const fallbackProfile = buildProfileDraft(state.user, readPendingProfile() || {});
+      const fallbackProfile = buildProfileDraft(currentUser, readPendingProfile() || {});
       state.profile = fallbackProfile;
-      state.user.profile = fallbackProfile;
+      if (state.user && state.user.id === currentUser.id) {
+        state.user.profile = fallbackProfile;
+      }
       state.profileUsername = fallbackProfile.username;
-      state.profileUserId = state.user.id;
+      state.profileUserId = currentUser.id;
       return {
         ok: true,
         degraded: true,
@@ -1019,14 +1028,16 @@
     }
 
     const storedPending = readPendingProfile();
-    const draft = storedPending?.id === state.user.id ? storedPending : buildProfileDraft(state.user, storedPending || {});
+    const draft = storedPending?.id === currentUser.id ? storedPending : buildProfileDraft(currentUser, storedPending || {});
     const result = await ensureProfileRecord(draft);
 
     if (result.ok) {
       state.profile = result.profile;
-      state.user.profile = result.profile;
+      if (state.user && state.user.id === currentUser.id) {
+        state.user.profile = result.profile;
+      }
       state.profileUsername = result.profile.username;
-      state.profileUserId = result.profile.id || state.user.id;
+      state.profileUserId = result.profile.id || currentUser.id;
       sessionStorage.removeItem(PENDING_PROFILE_KEY);
     }
 
@@ -1034,11 +1045,16 @@
   }
 
   async function ensureProfileRecord(profileDraft) {
-    if (!state.user) {
+    const currentUser = state.user;
+    if (!currentUser) {
       return { ok: false, message: 'You must be logged in to create a profile.' };
     }
 
-    const payload = buildProfileDraft(state.user, profileDraft);
+    if (!currentUser.id) {
+      return { ok: false, message: 'Current user session is invalid.' };
+    }
+
+    const payload = buildProfileDraft(currentUser, profileDraft);
     const { data, error } = await supabase
       .from('profiles')
       .upsert(payload, { onConflict: 'id' })
@@ -1049,9 +1065,11 @@
       if (isProfilesSetupCompatibilityError(error)) {
         state.capabilities.profilesTable = 'missing';
         state.profile = payload;
-        state.user.profile = payload;
+        if (state.user && state.user.id === currentUser.id) {
+          state.user.profile = payload;
+        }
         state.profileUsername = payload.username;
-        state.profileUserId = payload.id || state.user.id;
+        state.profileUserId = payload.id || currentUser.id;
         return {
           ok: true,
           profile: payload,
@@ -1062,7 +1080,10 @@
     }
 
     state.capabilities.profilesTable = 'available';
-    state.profileUserId = data.id || state.user.id;
+    state.profileUserId = data.id || currentUser.id;
+    if (state.user && state.user.id === currentUser.id) {
+      state.user.profile = data;
+    }
     return { ok: true, profile: data };
   }
 
@@ -3396,6 +3417,25 @@
       || combined.includes('could not find the table')
       || combined.includes('could not find a relationship')
       || (combined.includes('profiles') && (combined.includes('does not exist') || combined.includes('not found')))
+      || code === '42p01'
+      || code === 'pgrst200'
+      || code === 'pgrst205';
+  }
+
+  function isMissingStoriesTableError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    const details = String(error?.details || '').toLowerCase();
+    const hint = String(error?.hint || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    const combined = `${message} ${details} ${hint}`;
+
+    return combined.includes('schema cache')
+      || combined.includes('public.stories')
+      || combined.includes(' relation "stories" ')
+      || combined.includes(` relation "public.stories" `)
+      || combined.includes('could not find the table')
+      || combined.includes('could not find a relationship')
+      || (combined.includes('stories') && (combined.includes('does not exist') || combined.includes('not found')))
       || code === '42p01'
       || code === 'pgrst200'
       || code === 'pgrst205';
