@@ -259,6 +259,65 @@ create trigger set_posts_updated_at
   before update on public.posts
   for each row execute procedure public.set_updated_at();
 
+create table if not exists public.stories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  media_url text not null,
+  type text not null default 'image',
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '24 hours'),
+  views integer not null default 0,
+  constraint stories_type_check check (type in ('image', 'video'))
+);
+
+alter table if exists public.stories add column if not exists type text;
+alter table if exists public.stories add column if not exists expires_at timestamptz;
+alter table if exists public.stories add column if not exists views integer;
+
+update public.stories
+set type = 'image'
+where type is null;
+
+update public.stories
+set expires_at = now() + interval '24 hours'
+where expires_at is null;
+
+update public.stories
+set views = 0
+where views is null;
+
+alter table if exists public.stories alter column type set default 'image';
+alter table if exists public.stories alter column type set not null;
+alter table if exists public.stories alter column expires_at set not null;
+alter table if exists public.stories alter column views set not null;
+
+create index if not exists idx_stories_expires_at on public.stories (expires_at desc);
+create index if not exists idx_stories_user_id on public.stories (user_id, created_at desc);
+
+drop trigger if exists set_stories_updated_at on public.stories;
+create trigger set_stories_updated_at
+  before update on public.stories
+  for each row execute procedure public.set_updated_at();
+
+alter table public.stories enable row level security;
+
+drop policy if exists "Stories public read" on public.stories;
+create policy "Stories public read" on public.stories
+  for select
+  using (true);
+
+drop policy if exists "Stories insert own" on public.stories;
+create policy "Stories insert own" on public.stories
+  for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Stories delete own" on public.stories;
+create policy "Stories delete own" on public.stories
+  for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
 alter table public.posts enable row level security;
 
 drop policy if exists "Posts public read" on public.posts;

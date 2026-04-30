@@ -1218,7 +1218,8 @@
   }
 
   function normalizeStoryRecord(record) {
-    const type = record.type || (record.media_url?.endsWith('.mp4') ? 'video' : 'image');
+    const rawType = record.type || (record.media_url?.endsWith('.mp4') ? 'video' : 'image');
+    const type = rawType === 'reel' ? 'video' : rawType;
     return {
       id: record.id || `story-${Math.random().toString(36).slice(2, 9)}`,
       user_id: record.user_id,
@@ -2545,19 +2546,28 @@
     }
 
     if (dom.shareAsStory?.checked && state.authMode === 'user' && state.user && (payload.image_url || payload.media_url)) {
-      await saveStory({
+      const storyResult = await saveStory({
         user_id: state.user.id,
         media_url: payload.media_url || payload.image_url,
         type: payload.type === 'reel' ? 'video' : payload.type === 'image' ? 'image' : 'image',
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         created_at: new Date().toISOString(),
       });
+
+      if (!storyResult.ok) {
+        console.warn('Story save failed:', storyResult.error);
+        showToast('Post published, but story could not be saved.', 'warning');
+      }
     }
 
     resetCreateForm();
     dom.createModal.hidden = true;
     showToast('Post published successfully.', 'success');
     await loadHomeFeed(true);
+
+    if (dom.shareAsStory?.checked) {
+      await loadHomeStories();
+    }
   }
 
   async function uploadFile(file, bucket) {
