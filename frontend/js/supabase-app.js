@@ -1340,8 +1340,8 @@
     }
 
     state.postLoading = true;
-    dom.homeEmpty?.hidden = true;
-    dom.homeLoadMore?.hidden = true;
+    if (dom.homeEmpty) dom.homeEmpty.hidden = true;
+    if (dom.homeLoadMore) dom.homeLoadMore.hidden = true;
     if (!state.posts.length) {
       dom.homeFeed.innerHTML = '<div class="empty-state">Loading posts...</div>';
     }
