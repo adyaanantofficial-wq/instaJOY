@@ -106,6 +106,20 @@
     cacheDom();
     bindEvents();
 
+    // DEV TEST HOOKS: expose minimal debug helpers for local testing (no-op in production)
+    try {
+      window.__instajoy_debug = window.__instajoy_debug || {};
+      window.__instajoy_debug.setState = (patch) => {
+        try {
+          Object.assign(state, patch || {});
+        } catch (e) {
+          console.warn('debug setState failed', e);
+        }
+      };
+      window.__instajoy_debug.getState = () => ({ ...state });
+      window.__instajoy_debug.renderHomeFeed = () => { try { renderHomeFeed(); } catch (e) { /* ignore */ } };
+    } catch (e) {}
+
     if (!supabase?.auth) {
       showLanding();
       showToast('Supabase is not configured correctly. Check frontend/js/config.js.', 'error');
@@ -1138,56 +1152,52 @@
 
     dom.storiesStrip.innerHTML = '<div class="empty-state">Loading stories...</div>';
 
+    // Fetch stories and posts in parallel and pick the best available result quickly.
     const stories = [];
     let storyRows = [];
-    let storyError = null;
 
-    if (state.authMode === 'user' && state.user) {
-      const result = await supabase
-        .from('stories')
-        .select('id, user_id, media_url, type, expires_at, created_at, views, profiles(username, avatar_url)')
-        .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(12);
+    const storyPromise = supabase
+      .from('stories')
+      .select('id, user_id, media_url, type, expires_at, created_at, views, profiles(id, username, avatar_url)')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(12)
+      .then((r) => ({ source: 'stories', result: r }))
+      .catch((err) => ({ source: 'stories', result: { error: err } }));
 
-      if (!result.error) {
-        storyRows = result.data || [];
-      } else if (isMissingStoriesTableError(result.error)) {
-        state.capabilities.storiesTable = 'missing';
-      } else {
-        storyError = result.error;
-      }
-    }
+    const postsPromise = supabase
+      .from('posts')
+      .select('id, user_id, created_at, image_url, media_url, type, profiles(id, username, avatar_url)')
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then((r) => ({ source: 'posts', result: r }))
+      .catch((err) => ({ source: 'posts', result: { error: err } }));
 
-    if (!storyRows.length) {
-      const postResult = await supabase
-        .from('posts')
-        .select('id, user_id, created_at, image_url, media_url, type, profiles(username, avatar_url)')
-        .order('created_at', { ascending: false })
-        .limit(20);
+    const settled = await Promise.all([storyPromise, postsPromise]);
 
-      if (!postResult.error) {
-        storyRows = postResult.data || [];
-      } else {
-        storyError = storyError || postResult.error;
-      }
-    }
+    // Prefer stories if available and not missing
+    const storyResult = settled.find((s) => s.source === 'stories')?.result;
+    const postsResult = settled.find((s) => s.source === 'posts')?.result;
 
-    if (storyError && !storyRows.length) {
+    if (storyResult && !storyResult.error && Array.isArray(storyResult.data) && storyResult.data.length) {
+      storyRows = storyResult.data;
+    } else if (postsResult && !postsResult.error && Array.isArray(postsResult.data) && postsResult.data.length) {
+      // fall back to recent posts as stories
+      storyRows = postsResult.data;
+    } else {
       dom.storiesStrip.innerHTML = '<div class="empty-state">Unable to load stories.</div>';
       return;
     }
 
+    // Deduplicate by user and limit to 8
     const seenUserIds = new Set();
     for (const item of storyRows) {
-      if (!item.user_id || seenUserIds.has(item.user_id) || item.user_id === state.user?.id) {
+      if (!item.user_id || seenUserIds.has(item.user_id)) {
         continue;
       }
       seenUserIds.add(item.user_id);
       stories.push(normalizeStoryRecord(item));
-      if (stories.length >= 8) {
-        break;
-      }
+      if (stories.length >= 8) break;
     }
 
     if (!stories.length) {
@@ -1391,6 +1401,7 @@
     state.posts = state.posts.concat(pagePosts);
     await refreshFollowingForVisibleFeed();
     await refreshLikedPostsForVisibleFeed();
+    await refreshCountsForVisibleFeed();
     await loadFeedAffinity();
     state.posts = scoreFeedPosts(state.posts);
     renderHomeFeed();
@@ -1398,6 +1409,34 @@
     state.postLoading = false;
     dom.homeLoadMore.hidden = !state.hasMoreFeed;
     console.debug('posts fetched:', state.posts.length);
+  }
+
+  async function refreshCountsForVisibleFeed() {
+    if (!state.posts || !state.posts.length) return;
+
+    const postIds = state.posts.map((p) => normalizePostRecord(p).id).filter(Boolean);
+    if (!postIds.length) return;
+
+    try {
+      const [likesRes, commentsRes] = await Promise.all([
+        supabase.from('likes').select('post_id').in('post_id', postIds),
+        supabase.from('comments').select('post_id').in('post_id', postIds),
+      ]);
+
+      const likeCounts = {};
+      (likesRes.data || []).forEach((r) => { likeCounts[r.post_id] = (likeCounts[r.post_id] || 0) + 1; });
+
+      const commentCounts = {};
+      (commentsRes.data || []).forEach((r) => { commentCounts[r.post_id] = (commentCounts[r.post_id] || 0) + 1; });
+
+      state.posts.forEach((p) => {
+        const id = normalizePostRecord(p).id;
+        p.like_count = likeCounts[id] || 0;
+        p.comment_count = commentCounts[id] || 0;
+      });
+    } catch (err) {
+      console.warn('Failed to refresh post counts', err?.message || err);
+    }
   }
 
   function renderHomeFeed() {
@@ -1439,7 +1478,9 @@
               <div class="post-meta">${escapeHtml(createdAt)}</div>
             </div>
           </div>
-          ${state.authMode === 'user' && state.user?.id !== author.id ? `<button class="ghost-button compact follow-button" data-action="toggle-follow" data-user-id="${escapeHtml(author.id)}" data-following="${state.followingUserIds.has(author.id)}">${state.followingUserIds.has(author.id) ? 'Following' : 'Follow'}</button>` : ''}
+          ${author.id && author.id !== (state.user?.id || null)
+            ? `<button class="ghost-button compact follow-button" data-action="toggle-follow" data-user-id="${escapeHtml(author.id)}" data-following="${state.followingUserIds.has(author.id)}" ${state.authMode !== 'user' ? 'disabled' : ''}>${state.followingUserIds.has(author.id) ? 'Following' : 'Follow'}</button>`
+            : ''}
           <button class="ghost-button compact" aria-label="Hide Post" data-action="hide-post" data-post-id="${normalized.id}">✕</button>
         </header>
         
@@ -1497,6 +1538,18 @@
     if (error) {
       showToast(humanizeError(error), 'error');
       return;
+    }
+
+    // Update local post like_count for immediate UI feedback
+    const postIndex = state.posts.findIndex((p) => normalizePostRecord(p).id === postId);
+    if (postIndex !== -1) {
+      // Ensure we mutate the normalized object stored in state.posts
+      const p = state.posts[postIndex];
+      const normalized = normalizePostRecord(p);
+      const currentLikes = Number(normalized.like_count || normalized.likes || 0);
+      const newCount = state.likedPostIds.has(postId) ? currentLikes + 1 : Math.max(0, currentLikes - 1);
+      // write back to the existing object (preserve other fields)
+      p.like_count = newCount;
     }
 
     renderHomeFeed();
@@ -1567,6 +1620,18 @@
 
     dom.commentInput.value = '';
     showToast('Comment posted.', 'success');
+
+    // Increment local comment_count for immediate UI feedback
+    const postId = state.currentCommentPostId;
+    const postIndex = state.posts.findIndex((p) => normalizePostRecord(p).id === postId);
+    if (postIndex !== -1) {
+      const p = state.posts[postIndex];
+      const normalized = normalizePostRecord(p);
+      const currentComments = Number(normalized.comment_count || normalized.comments || 0);
+      p.comment_count = currentComments + 1;
+      renderHomeFeed();
+    }
+
     await loadComments(state.currentCommentPostId);
   }
 
@@ -2836,7 +2901,7 @@
   async function selectCommentsWithAuthors(postId) {
     const joinedResult = await supabase
       .from('comments')
-      .select('id, body, created_at, user_id, profiles(username, avatar_url)')
+      .select('id, body, created_at, user_id, profiles(id, username, avatar_url)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
 
@@ -2890,7 +2955,7 @@
     const baseVariants = [
       {
         name: 'modern_joined',
-        select: 'id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)',
+        select: 'id, user_id, type, category, caption, content, image_url, media_url, created_at, profiles(id, username, avatar_url)',
         searchMode: 'caption_content',
         localReelFilter: false,
       },
@@ -2902,7 +2967,7 @@
       },
       {
         name: 'legacy_media_joined',
-        select: 'id, user_id, caption, content, image_url, media_url, created_at, profiles(username, avatar_url)',
+        select: 'id, user_id, caption, content, image_url, media_url, created_at, profiles(id, username, avatar_url)',
         searchMode: 'caption_content',
         localReelFilter: true,
       },
@@ -2914,7 +2979,7 @@
       },
       {
         name: 'legacy_content_joined',
-        select: 'id, user_id, caption, content, image_url, created_at, profiles(username, avatar_url)',
+        select: 'id, user_id, caption, content, image_url, created_at, profiles(id, username, avatar_url)',
         searchMode: 'caption_content',
         localReelFilter: true,
       },
@@ -2926,7 +2991,7 @@
       },
       {
         name: 'legacy_caption_joined',
-        select: 'id, user_id, caption, image_url, created_at, profiles(username, avatar_url)',
+        select: 'id, user_id, caption, image_url, created_at, profiles(id, username, avatar_url)',
         searchMode: 'caption_only',
         localReelFilter: true,
       },
@@ -3238,17 +3303,32 @@
 
   function deriveAuthor(record) {
     if (record?.profiles) {
-      return record.profiles;
+      // ensure an id property so follow buttons can target the author
+      return {
+        id: record.profiles.id || record.user_id || null,
+        username: record.profiles.username || 'member',
+        avatar_url: record.profiles.avatar_url || DEFAULT_AVATAR,
+      };
     }
 
-    if (record?.user_id && state.user?.id && record.user_id === state.user.id) {
+    if (record?.user_id) {
+      if (state.user?.id && record.user_id === state.user.id) {
+        return {
+          id: record.user_id,
+          username: state.profile?.username || state.user?.user_metadata?.username || state.user?.email?.split('@')[0] || 'you',
+          avatar_url: state.profile?.avatar_url || DEFAULT_AVATAR,
+        };
+      }
+
       return {
-        username: state.profile?.username || state.user?.user_metadata?.username || state.user?.email?.split('@')[0] || 'you',
-        avatar_url: state.profile?.avatar_url || DEFAULT_AVATAR,
+        id: record.user_id,
+        username: 'member',
+        avatar_url: DEFAULT_AVATAR,
       };
     }
 
     return {
+      id: null,
       username: 'member',
       avatar_url: DEFAULT_AVATAR,
     };
