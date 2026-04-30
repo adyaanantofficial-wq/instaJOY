@@ -57,7 +57,6 @@
                                 <h2>Stories</h2>
                                 <p>Quick highlight bubbles from creators and followers. Tap a story to open that profile fast.</p>
                             </div>
-                            <button id="suggestionToggleButton" class="secondary-button" type="button" data-action="toggle-suggestions">Show suggestions</button>
                         </div>
                         <section id="storiesStrip" class="stories-strip"></section>
                         <div class="home-feed-panel">
@@ -71,7 +70,17 @@
                         </div>
                     </div>
                     <aside class="home-right">
-                        <section id="suggestedAccounts" class="suggested-accounts" hidden>
+                        <section id="sidebarProfileCard" class="sidebar-profile-card">
+                            <div class="sidebar-profile-row">
+                                <img id="sidebarAvatar" class="avatar profile-avatar" src="ilogo.png" alt="Your avatar">
+                                <div class="sidebar-profile-copy">
+                                    <strong id="sidebarUsername">instaJOY</strong>
+                                    <span id="sidebarStatus">Suggested for you</span>
+                                </div>
+                                <button class="ghost-button compact" type="button" data-action="switch-account">Switch</button>
+                            </div>
+                        </section>
+                        <section id="suggestedAccounts" class="suggested-accounts">
                             <div class="suggested-header">
                                 <div>
                                     <h3>Suggested for you</h3>

@@ -39,7 +39,7 @@
     postLoading: false,
     reelLoading: false,
     currentCommentPostId: null,
-    suggestionsVisible: false,
+    suggestionsVisible: true,
     feedAffinity: {
       likedCategories: new Set(),
       likedAuthorIds: new Set(),
@@ -152,6 +152,9 @@
     dom.notificationButton = document.getElementById('notificationButton');
     dom.suggestedAccounts = document.getElementById('suggestedAccounts');
     dom.suggestedFollowList = document.getElementById('suggestedFollowList');
+    dom.sidebarAvatar = document.getElementById('sidebarAvatar');
+    dom.sidebarUsername = document.getElementById('sidebarUsername');
+    dom.sidebarStatus = document.getElementById('sidebarStatus');
     dom.messagesView = document.getElementById('messagesView');
     dom.messagesRefresh = document.getElementById('messagesRefresh');
     dom.conversationList = document.getElementById('conversationList');
@@ -272,10 +275,25 @@
     dom.bottomNav.hidden = false;
     dom.authView.hidden = true;
 
+    renderHomeSidebarProfile();
     updateWriteAccessUi();
     updateTopbarAction();
     renderView(normalizeViewName(window.location.hash.replace(/^#/, '')));
     await hydrateActiveView(true);
+  }
+
+  function renderHomeSidebarProfile() {
+    if (!dom.sidebarUsername || !dom.sidebarStatus || !dom.sidebarAvatar) {
+      return;
+    }
+
+    const displayName = state.profile?.display_name || state.profile?.username || state.user?.user_metadata?.username || 'Guest';
+    const statusText = state.profile?.bio || (state.authMode === 'guest' ? 'Browse posts and creators' : 'Suggested for you');
+    const avatarUrl = state.profile?.avatar_url || state.user?.user_metadata?.avatar_url || DEFAULT_AVATAR;
+
+    dom.sidebarUsername.textContent = displayName;
+    dom.sidebarStatus.textContent = statusText;
+    dom.sidebarAvatar.src = escapeHtml(avatarUrl);
   }
 
   function showLanding() {
@@ -638,10 +656,8 @@
       return;
     }
 
-    if (action === 'toggle-suggestions') {
-      state.suggestionsVisible = !state.suggestionsVisible;
-      dom.suggestionToggleButton.textContent = state.suggestionsVisible ? 'Hide suggestions' : 'Show suggestions';
-      await loadSuggestedFollows();
+    if (action === 'switch-account') {
+      showToast('Switch account is not available in this preview.', 'info');
       return;
     }
 
@@ -765,6 +781,7 @@
   async function hydrateActiveView(forceRefresh) {
     if (state.activeView === 'home') {
       await loadHomeFeed(forceRefresh);
+      await loadHomeStories();
       loadSuggestedFollows().catch((error) => {
         console.warn('Suggested accounts failed to load', error);
       });
