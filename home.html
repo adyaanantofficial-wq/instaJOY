@@ -292,15 +292,391 @@
         }
 
         .mood-chip.active {
-            background: rgba(244, 106, 59, 0.08);
-            border-color: rgba(244, 106, 59, 0.2);
-            color: #e03f24;
+            background: rgba(244, 106, 59, 0.14);
+            border-color: rgba(244, 106, 59, 0.28);
+            color: #d94829;
+            transform: scale(1.02);
         }
 
         .home-mood-note {
             padding: 0 16px 14px;
             font-size: 14px;
-            color: #4f5d6c;
+            color: #475569;
+        }
+
+        .home-top-panel {
+            background: rgba(255, 255, 255, 0.84);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.92);
+            box-shadow: 0 18px 44px rgba(28, 58, 107, 0.08);
+            border-radius: 24px;
+            margin: 0 16px 16px;
+            padding: 16px 0 10px;
+        }
+
+        .stories-shell {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            overflow-x: auto;
+            padding: 0 16px 16px;
+            scroll-snap-type: x mandatory;
+        }
+
+        .stories-shell::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .stories-shell::-webkit-scrollbar-thumb {
+            background: rgba(90, 120, 180, 0.28);
+            border-radius: 999px;
+        }
+
+        .story-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 78px;
+            text-align: center;
+            scroll-snap-align: start;
+        }
+
+        .story-card {
+            width: 78px;
+            height: 78px;
+            border-radius: 50%;
+            border: none;
+            background: white;
+            box-shadow: 0 14px 28px rgba(34, 72, 163, 0.12);
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            transition: transform 0.24s ease, box-shadow 0.24s ease;
+        }
+
+        .story-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 18px 34px rgba(34, 72, 163, 0.18);
+        }
+
+        .story-card.story-action {
+            background: linear-gradient(180deg, #ffffff 0%, #f7f8ff 100%);
+        }
+
+        .story-card.story-ring {
+            width: 78px;
+            height: 78px;
+            padding: 4px;
+            border-radius: 50%;
+            background: radial-gradient(circle at top left, #fbbf24, #f97316 35%, #8b5cf6 100%);
+            display: grid;
+            place-items: center;
+        }
+
+        .story-avatar {
+            width: 68px;
+            height: 68px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid white;
+            background: #f0f2f7;
+        }
+
+        .story-icon {
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .story-label {
+            margin-top: 10px;
+            max-width: 86px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #1f2937;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mood-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 0 16px 14px;
+        }
+
+        .mood-chip {
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: #ffffff;
+            color: #1f2937;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+        }
+
+        .mood-chip:hover {
+            transform: translateY(-1px);
+            border-color: rgba(59, 130, 246, 0.22);
+        }
+
+        .post-card {
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 22px;
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            box-shadow: 0 20px 50px rgba(29, 78, 168, 0.08);
+            overflow: hidden;
+            margin: 0 16px 18px;
+        }
+
+        .card-header,
+        .card-body,
+        .card-actions,
+        .card-stats {
+            padding: 14px 18px;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            background: transparent;
+            border-bottom: none;
+        }
+
+        .avatar-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #f0f2f7;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+        }
+
+        .user-copy {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            min-width: 0;
+            text-align: left;
+        }
+
+        .user-copy strong {
+            font-size: 15px;
+            color: #111827;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: block;
+        }
+
+        .user-copy span {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        .card-body {
+            padding: 0 18px 18px;
+        }
+
+        .post-media {
+            width: 100%;
+            max-height: 520px;
+            border-radius: 18px;
+            object-fit: cover;
+            background: #eef3fb;
+            margin-bottom: 14px;
+            display: block;
+        }
+
+        .post-text {
+            margin: 0;
+            font-size: 15px;
+            line-height: 1.75;
+            color: #334155;
+        }
+
+        .action-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .chip-button {
+            padding: 11px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: rgba(248, 250, 252, 0.95);
+            color: #111827;
+            font-weight: 600;
+            transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+        }
+
+        .chip-button:hover {
+            transform: translateY(-1px);
+            background: rgba(226, 232, 240, 0.98);
+        }
+
+        .chip-button.is-active {
+            background: rgba(249, 115, 22, 0.1);
+            border-color: rgba(249, 115, 22, 0.25);
+            color: #c2410c;
+        }
+
+        .story-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 250;
+            display: grid;
+            place-items: center;
+            padding: 18px;
+            background: rgba(12, 25, 49, 0.58);
+        }
+
+        .story-modal.hidden {
+            display: none;
+        }
+
+        .story-modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(8, 20, 44, 0.72);
+        }
+
+        .story-modal-card {
+            position: relative;
+            width: min(840px, 100%);
+            max-width: 840px;
+            border-radius: 26px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 32px 80px rgba(7, 24, 55, 0.2);
+            backdrop-filter: blur(18px);
+            z-index: 1;
+        }
+
+        .story-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 18px 20px;
+        }
+
+        .story-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .story-meta-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: #f8fafc;
+        }
+
+        .story-meta-user {
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .story-meta-time {
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        .story-modal-close {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(15, 23, 42, 0.08);
+            color: #0f172a;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .story-progress {
+            display: flex;
+            gap: 8px;
+            padding: 0 20px 18px;
+        }
+
+        .story-progress-bar {
+            flex: 1;
+            height: 4px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .story-progress-bar::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            width: var(--progress, 0%);
+            background: linear-gradient(90deg, #fb7185 0%, #f97316 100%);
+            transition: width 0.25s ease;
+        }
+
+        .story-progress-bar.active::after {
+            width: 100%;
+        }
+
+        .story-media-shell {
+            width: 100%;
+            background: #000;
+            aspect-ratio: 4 / 5;
+            min-height: 520px;
+            overflow: hidden;
+        }
+
+        .story-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .story-controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 18px 20px 24px;
+        }
+
+        .story-control-button {
+            flex: 1;
+            border: none;
+            background: rgba(241, 245, 249, 0.96);
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-weight: 700;
+            color: #0f172a;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .story-control-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
         }
 
         /* Feed Stack */
@@ -620,6 +996,26 @@
             margin: 16px;
         }
 
+        .app-shell {
+            min-height: 100vh;
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(255, 255, 255, 0.82);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+            box-shadow: 0 14px 42px rgba(29, 78, 168, 0.06);
+        }
+
+        .main-shell {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding-bottom: 92px;
+        }
+
         /* Responsive */
         @media (max-width: 480px) {
             .topbar {
@@ -716,67 +1112,9 @@
                     <p>Posts from your network and trending content worldwide</p>
                 </div>
                 <div class="home-top-panel">
-                    <div class="stories-shell" role="list">
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-action" type="button" aria-label="Your story">
-                                <span class="story-icon">+</span>
-                            </button>
-                            <div class="story-label">Your story</div>
-                        </div>
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-action" type="button" aria-label="Create chain">
-                                <span class="story-icon">🔗</span>
-                            </button>
-                            <div class="story-label">+ Create chain</div>
-                        </div>
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-ring" type="button" aria-label="Story from chandrika">
-                                <img src="ilogo.png" alt="chandrika profile" class="story-avatar">
-                            </button>
-                            <div class="story-label">chandrika_...</div>
-                        </div>
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-ring" type="button" aria-label="Story from joygoswa">
-                                <img src="ilogo.png" alt="joygoswa profile" class="story-avatar">
-                            </button>
-                            <div class="story-label">joygoswa...</div>
-                        </div>
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-ring" type="button" aria-label="Story from __alone__">
-                                <img src="ilogo.png" alt="__alone__ profile" class="story-avatar">
-                            </button>
-                            <div class="story-label">__alone__...</div>
-                        </div>
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-ring" type="button" aria-label="Story from apurba12_">
-                                <img src="ilogo.png" alt="apurba12_ profile" class="story-avatar">
-                            </button>
-                            <div class="story-label">apurba12_</div>
-                        </div>
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-ring" type="button" aria-label="Story from ___khush">
-                                <img src="ilogo.png" alt="___khush profile" class="story-avatar">
-                            </button>
-                            <div class="story-label">___khush...</div>
-                        </div>
-                        <div class="story-item" role="listitem">
-                            <button class="story-card story-ring" type="button" aria-label="Story from i.a.m.rani.o">
-                                <img src="ilogo.png" alt="i.a.m.rani.o profile" class="story-avatar">
-                            </button>
-                            <div class="story-label">i.a.m.rani.o...</div>
-                        </div>
-                    </div>
-                    <div class="mood-row">
-                        <button type="button" class="mood-chip active">😀 Happy</button>
-                        <button type="button" class="mood-chip">🔥 Motivation</button>
-                        <button type="button" class="mood-chip">😊 Calm</button>
-                        <button type="button" class="mood-chip">🎵 Music</button>
-                        <button type="button" class="mood-chip">😂 Fun</button>
-                        <button type="button" class="mood-chip">📚 Learn</button>
-                        <button type="button" class="mood-chip">🌍 Explore</button>
-                        <button type="button" class="mood-chip">⭐ Mixed</button>
-                    </div>
-                    <div class="home-mood-note">Because you're in Happy mood</div>
+                    <div id="storiesShell" class="stories-shell" role="list"></div>
+                    <div id="moodChipRow" class="mood-row"></div>
+                    <div id="moodHeading" class="home-mood-note">Because you're in Happy mood</div>
                 </div>
                 <div class="guest-badge" id="guestBadge" hidden>👀 Guest Mode - View Only</div>
                 <ul id="homeFeed" class="stack-list"></ul>
@@ -787,6 +1125,30 @@
                 </div>
                 <button id="homeLoadMore" class="action-button" type="button" hidden>Load more posts</button>
             </section>
+
+            <div id="storyModal" class="story-modal hidden" aria-hidden="true">
+                <div class="story-modal-backdrop" data-action="close-story"></div>
+                <div class="story-modal-card">
+                    <div class="story-modal-header">
+                        <div class="story-meta">
+                            <img id="storyMetaAvatar" class="story-meta-avatar" src="ilogo.png" alt="instaJOY story avatar">
+                            <div>
+                                <div id="storyMetaUser" class="story-meta-user">instaJOY</div>
+                                <div id="storyMetaTime" class="story-meta-time">now</div>
+                            </div>
+                        </div>
+                        <button type="button" class="story-modal-close" data-action="close-story" aria-label="Close story viewer">×</button>
+                    </div>
+                    <div id="storyProgress" class="story-progress"></div>
+                    <div class="story-media-shell">
+                        <video id="storyVideo" class="story-video" muted playsinline controls preload="metadata"></video>
+                    </div>
+                    <div class="story-controls">
+                        <button type="button" class="story-control-button" data-action="story-prev">Previous</button>
+                        <button type="button" class="story-control-button" data-action="story-next">Next</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Reels View -->
             <section id="reelsView" class="view" hidden>
@@ -978,6 +1340,32 @@
                     comments: 234,
                     shares: 156,
                     liked: false
+                }
+            ],
+            stories: [
+                {
+                    id: 'story1',
+                    username: 'instaJOY',
+                    avatar: 'ilogo.png',
+                    thumb: 'ilogo.png',
+                    video: 'instaJOY(1)(1).mp4',
+                    timestamp: new Date(Date.now() - 30 * 60 * 1000),
+                },
+                {
+                    id: 'story2',
+                    username: 'chandrika_',
+                    avatar: 'ilogo.png',
+                    thumb: 'ilogo.png',
+                    video: 'instaJOY(1)(1).mp4',
+                    timestamp: new Date(Date.now() - 90 * 60 * 1000),
+                },
+                {
+                    id: 'story3',
+                    username: 'alex_adventures',
+                    avatar: 'ilogo.png',
+                    thumb: 'ilogo.png',
+                    video: 'instaJOY(1)(1).mp4',
+                    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000),
                 }
             ]
         };

@@ -27,6 +27,16 @@
             cursor: null,
             hasMore: true,
             loading: false,
+            mood: 'happy',
+        },
+        stories: {
+            items: [],
+            loading: false,
+            lastRefreshed: null,
+        },
+        storyViewer: {
+            activeIndex: 0,
+            isOpen: false,
         },
         reels: {
             items: [],
@@ -87,6 +97,8 @@
         
         renderAuthView();
         bindStaticEvents();
+        renderMoodChips();
+        updateMoodHeading();
         setupObservers();
 
         try {
@@ -146,6 +158,16 @@
         dom.homeView = document.getElementById('homeView');
         dom.homeFeed = document.getElementById('homeFeed');
         dom.homeLoadMore = document.getElementById('homeLoadMore');
+        dom.homeEmpty = document.getElementById('homeEmpty');
+        dom.storiesShell = document.getElementById('storiesShell');
+        dom.moodChipRow = document.getElementById('moodChipRow');
+        dom.moodHeading = document.getElementById('moodHeading');
+        dom.storyModal = document.getElementById('storyModal');
+        dom.storyVideo = document.getElementById('storyVideo');
+        dom.storyProgress = document.getElementById('storyProgress');
+        dom.storyMetaAvatar = document.getElementById('storyMetaAvatar');
+        dom.storyMetaUser = document.getElementById('storyMetaUser');
+        dom.storyMetaTime = document.getElementById('storyMetaTime');
         dom.homeEmpty = document.getElementById('homeEmpty');
         dom.reelsView = document.getElementById('reelsView');
         dom.reelsFeed = document.getElementById('reelsFeed');
@@ -362,6 +384,8 @@
         document.querySelectorAll('.nav-button[data-view="messages"]').forEach((btn) => {
             btn.hidden = isGuestMode();
         });
+
+        await fetchStories();
         
         if (useHash) {
             const handled = await resolveHashRoute();
@@ -700,18 +724,36 @@
             if (state.home.cursor) {
                 query.set('cursor', state.home.cursor);
             }
+            if (state.home.mood && state.home.mood !== 'mixed') {
+                query.set('mood', state.home.mood);
+            }
+
+            if (!state.home.items.length && dom.homeFeed) {
+                dom.homeFeed.innerHTML = renderFeedSkeleton(3);
+            }
 
             // Pass auth: false so guests don't send tokens but still fetch the public feed
             const response = await apiRequest(`/posts/feed?${query.toString()}`, { auth: false });
-            state.home.items = state.home.items.concat(response.posts || []);
+            const nextPosts = Array.isArray(response.posts) ? response.posts : [];
+            const filteredPosts = filterFeedPosts(nextPosts, state.home.mood);
+            state.home.items = state.home.items.concat(filteredPosts);
             state.home.cursor = response.nextCursor || null;
             state.home.hasMore = Boolean(response.hasMore);
+            state.home.items = rankFeedItems(state.home.items, state.home.mood);
+
+            if (!state.home.items.length && isGuestMode()) {
+                const demoData = window.INSTAJOY_DEMO_DATA || { posts: [] };
+                state.home.items = Array.isArray(demoData.posts) ? filterFeedPosts(demoData.posts, state.home.mood) : [];
+                state.home.items = state.home.items.length ? state.home.items : (demoData.posts || []);
+            }
+
             renderHomeFeed();
         } catch (error) {
             if (isGuestMode()) {
                 // Fallback to demo data if public API fails for guests
                 const demoData = window.INSTAJOY_DEMO_DATA || { posts: [] };
-                state.home.items = demoData.posts || [];
+                state.home.items = Array.isArray(demoData.posts) ? filterFeedPosts(demoData.posts, state.home.mood) : [];
+                state.home.items = state.home.items.length ? state.home.items : (demoData.posts || []);
                 state.home.hasMore = false;
                 renderHomeFeed();
             } else {
@@ -730,6 +772,12 @@
         if (!dom.homeFeed) return;
         
         if (!state.home.items.length) {
+            if (state.home.loading) {
+                dom.homeFeed.innerHTML = renderFeedSkeleton(3);
+                if (dom.homeEmpty) dom.homeEmpty.hidden = true;
+                return;
+            }
+
             dom.homeFeed.innerHTML = '';
             if (dom.homeEmpty) {
                 dom.homeEmpty.hidden = false;
@@ -748,6 +796,192 @@
         if (guestBadge && isGuestMode() && state.home.items.length > 0) {
             guestBadge.hidden = false;
         }
+    }
+
+    function renderFeedSkeleton(count = 2) {
+        return Array.from({ length: count }, () => `
+            <li class="skeleton-card" aria-hidden="true">
+                <div class="skeleton-header">
+                    <div class="skeleton-avatar skeleton"></div>
+                    <div class="skeleton-info">
+                        <div class="skeleton-name skeleton"></div>
+                        <div class="skeleton-time skeleton"></div>
+                    </div>
+                </div>
+                <div class="skeleton-image skeleton"></div>
+                <div class="skeleton-text skeleton"></div>
+            </li>
+        `).join('');
+    }
+
+    function filterFeedPosts(posts, mood) {
+        const normalize = (value) => String(value || '').toLowerCase();
+        const moodKeywords = {
+            happy: ['happy', 'joy', 'sunny', 'positive', 'smile'],
+            motivation: ['motivation', 'goal', 'hustle', 'dream', 'build'],
+            calm: ['calm', 'peace', 'zen', 'mindful', 'relax'],
+            music: ['music', 'song', 'beat', 'melody', 'audio'],
+            fun: ['fun', 'laugh', 'joke', 'meme', 'party'],
+            learn: ['learn', 'study', 'tutorial', 'tips', 'guide'],
+            explore: ['travel', 'explore', 'adventure', 'discover', 'journey'],
+        };
+
+        const keywords = moodKeywords[mood] || [];
+        if (!keywords.length || mood === 'mixed') {
+            return posts;
+        }
+
+        return posts.filter((post) => {
+            const text = normalize(post.text || post.content?.text);
+            const category = normalize(post.category);
+            if (keywords.some((keyword) => category.includes(keyword) || text.includes(keyword))) {
+                return true;
+            }
+            if (category.includes(mood)) {
+                return true;
+            }
+            return false;
+        });
+    }
+
+    function rankFeedItems(items, mood) {
+        return (items || []).slice().map((post) => {
+            const following = Boolean(post.author?.isFollowed || post.author?.following || post.following);
+            const engagement = Math.min(1, (((post.likeCount || post.likes || 0) + ((post.commentCount || post.comments || 0) * 2)) / 400));
+            const freshness = 1 - Math.min(1, (Date.now() - new Date(post.createdAt || post.timestamp || Date.now())) / (1000 * 60 * 60 * 24 * 7));
+            const moodRelevance = mood === 'mixed' ? 0.5 : (filterFeedPosts([post], mood).length ? 1 : 0);
+            const trending = Math.min(1, Number(post.trendingScore || post.popularity || ((post.likeCount || 0) / 200)) || 0);
+
+            post.__instaJOYScore = 0.35 * (following ? 1 : 0) + 0.25 * engagement + 0.2 * moodRelevance + 0.1 * freshness + 0.1 * trending;
+            return post;
+        }).sort((a, b) => (b.__instaJOYScore || 0) - (a.__instaJOYScore || 0));
+    }
+
+    async function fetchStories(forceRefresh = false) {
+        if (state.stories.loading && !forceRefresh) return;
+        state.stories.loading = true;
+
+        try {
+            const response = await apiRequest('/stories?limit=10', { auth: false });
+            state.stories.items = Array.isArray(response.stories) ? response.stories : [];
+        } catch (error) {
+            state.stories.items = Array.isArray(window.INSTAJOY_DEMO_DATA?.stories) ? window.INSTAJOY_DEMO_DATA.stories.slice() : [];
+        } finally {
+            if (!state.stories.items.length) {
+                state.stories.items = [{
+                    id: 'instajoy-default',
+                    username: 'instaJOY',
+                    avatar: DEFAULT_AVATAR,
+                    thumb: DEFAULT_AVATAR,
+                    video: 'instaJOY(1)(1).mp4',
+                    timestamp: new Date(),
+                }];
+            }
+            state.stories.lastRefreshed = Date.now();
+            state.stories.loading = false;
+            renderStories();
+            if (!state.stories.refreshInterval) {
+                state.stories.refreshInterval = window.setInterval(() => fetchStories(true), 30000);
+            }
+        }
+    }
+
+    function renderStories() {
+        if (!dom.storiesShell) return;
+        const staticItems = [
+            { label: 'Your story', icon: '+' },
+            { label: '+ Create chain', icon: '🔗' },
+        ];
+
+        const dynamicItems = (state.stories.items || []).map((story, index) => `
+            <div class="story-item">
+                <button class="story-card story-ring" type="button" data-action="open-story" data-story-index="${index}" aria-label="Open story from ${escapeHtml(story.username || 'story')}">
+                    <img class="story-avatar" src="${getAvatar(story.avatar)}" alt="${escapeHtml(story.username)}" onerror="this.src='ilogo.png'">
+                </button>
+                <div class="story-label">${escapeHtml(story.username || 'instaJOY')}</div>
+            </div>
+        `).join('');
+
+        dom.storiesShell.innerHTML = staticItems.map((item) => `
+            <div class="story-item">
+                <button class="story-card story-action" type="button" aria-label="${item.label}">
+                    <span class="story-icon">${item.icon}</span>
+                </button>
+                <div class="story-label">${item.label}</div>
+            </div>
+        `).join('') + dynamicItems;
+    }
+
+    async function applyMoodFilter(mood) {
+        state.home.mood = mood || 'mixed';
+        renderMoodChips();
+        updateMoodHeading();
+        await loadHomeFeed(true);
+    }
+
+    function renderMoodChips() {
+        if (!dom.moodChipRow) return;
+        const moods = [
+            { key: 'happy', label: '😀 Happy' },
+            { key: 'motivation', label: '🔥 Motivation' },
+            { key: 'calm', label: '😌 Calm' },
+            { key: 'music', label: '🎵 Music' },
+            { key: 'fun', label: '😂 Fun' },
+            { key: 'learn', label: '📚 Learn' },
+            { key: 'explore', label: '🌍 Explore' },
+            { key: 'mixed', label: '⭐ Mixed' },
+        ];
+
+        dom.moodChipRow.innerHTML = moods.map((mood) => `
+            <button type="button" class="mood-chip ${state.home.mood === mood.key ? 'active' : ''}" data-action="select-mood" data-mood="${mood.key}">
+                ${mood.label}
+            </button>
+        `).join('');
+    }
+
+    function updateMoodHeading() {
+        if (!dom.moodHeading) return;
+        const display = state.home.mood === 'mixed' ? 'Mixed' : state.home.mood.charAt(0).toUpperCase() + state.home.mood.slice(1);
+        dom.moodHeading.textContent = `Because you're in ${display} mood`;
+    }
+
+    function openStoryViewer(index) {
+        const stories = state.stories.items || [];
+        const story = stories[index];
+        if (!story || !dom.storyModal || !dom.storyVideo) return;
+
+        state.storyViewer.activeIndex = index;
+        state.storyViewer.isOpen = true;
+        dom.storyModal.hidden = false;
+        dom.storyModal.setAttribute('aria-hidden', 'false');
+        dom.storyProgress.innerHTML = stories.map((_, barIndex) => `
+            <span class="story-progress-bar ${barIndex === index ? 'active' : ''}" style="--progress:${barIndex === index ? 1 : 0}"></span>
+        `).join('');
+        dom.storyMetaAvatar.src = getAvatar(story.avatar);
+        dom.storyMetaAvatar.alt = escapeHtml(story.username || 'Story user');
+        dom.storyMetaUser.textContent = story.username || 'instaJOY';
+        dom.storyMetaTime.textContent = formatShortDate(story.timestamp || new Date());
+        dom.storyVideo.src = story.video || '';
+        dom.storyVideo.poster = story.thumb || DEFAULT_AVATAR;
+        dom.storyVideo.currentTime = 0;
+        dom.storyVideo.play().catch(() => {});
+    }
+
+    function closeStoryViewer() {
+        if (!dom.storyModal || !dom.storyVideo) return;
+        state.storyViewer.isOpen = false;
+        dom.storyModal.hidden = true;
+        dom.storyModal.setAttribute('aria-hidden', 'true');
+        dom.storyVideo.pause();
+    }
+
+    function switchStory(delta) {
+        const stories = state.stories.items || [];
+        if (!stories.length) return;
+        let nextIndex = state.storyViewer.activeIndex + delta;
+        if (nextIndex < 0) nextIndex = stories.length - 1;
+        if (nextIndex >= stories.length) nextIndex = 0;
+        openStoryViewer(nextIndex);
     }
 
     async function loadReels(reset) {
@@ -1661,6 +1895,31 @@
 
         if (action === 'open-comments') {
             await openComments(target.dataset.targetType, target.dataset.targetId);
+            return;
+        }
+
+        if (action === 'select-mood') {
+            await applyMoodFilter(target.dataset.mood);
+            return;
+        }
+
+        if (action === 'open-story') {
+            openStoryViewer(Number(target.dataset.storyIndex));
+            return;
+        }
+
+        if (action === 'story-prev') {
+            switchStory(-1);
+            return;
+        }
+
+        if (action === 'story-next') {
+            switchStory(1);
+            return;
+        }
+
+        if (action === 'close-story') {
+            closeStoryViewer();
             return;
         }
 
