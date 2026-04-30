@@ -172,6 +172,137 @@
             color: #65676b;
         }
 
+        .home-top-panel {
+            background: white;
+            padding: 16px 0 8px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #dbdbdb;
+        }
+
+        .stories-shell {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            overflow-x: auto;
+            padding: 0 16px 16px;
+            scroll-snap-type: x proximity;
+        }
+
+        .stories-shell::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .stories-shell::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .stories-shell::-webkit-scrollbar-thumb {
+            background: rgba(102, 102, 102, 0.25);
+            border-radius: 999px;
+        }
+
+        .story-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 78px;
+            text-align: center;
+            scroll-snap-align: start;
+        }
+
+        .story-card {
+            width: 78px;
+            height: 78px;
+            border-radius: 50%;
+            border: none;
+            background: white;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .story-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.12);
+        }
+
+        .story-card.story-action {
+            background: linear-gradient(180deg, #ffffff 0%, #f7f7f7 100%);
+        }
+
+        .story-card.story-ring {
+            width: 78px;
+            height: 78px;
+            padding: 4px;
+            border-radius: 50%;
+            background: radial-gradient(circle at top left, #f7b34a, #f46a3b 45%, #9d45f8 100%);
+            display: grid;
+            place-items: center;
+        }
+
+        .story-avatar {
+            width: 68px;
+            height: 68px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid white;
+            background: #f0f0f0;
+        }
+
+        .story-icon {
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .story-label {
+            margin-top: 10px;
+            max-width: 86px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #262626;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mood-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 0 16px 14px;
+        }
+
+        .mood-chip {
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: #ffffff;
+            color: #262626;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+        }
+
+        .mood-chip:hover {
+            transform: translateY(-1px);
+            border-color: rgba(244, 106, 59, 0.22);
+        }
+
+        .mood-chip.active {
+            background: rgba(244, 106, 59, 0.08);
+            border-color: rgba(244, 106, 59, 0.2);
+            color: #e03f24;
+        }
+
+        .home-mood-note {
+            padding: 0 16px 14px;
+            font-size: 14px;
+            color: #4f5d6c;
+        }
+
         /* Feed Stack */
         .stack-list {
             list-style: none;
@@ -583,6 +714,69 @@
                 <div class="view-intro">
                     <h2>Fresh Joy</h2>
                     <p>Posts from your network and trending content worldwide</p>
+                </div>
+                <div class="home-top-panel">
+                    <div class="stories-shell" role="list">
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-action" type="button" aria-label="Your story">
+                                <span class="story-icon">+</span>
+                            </button>
+                            <div class="story-label">Your story</div>
+                        </div>
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-action" type="button" aria-label="Create chain">
+                                <span class="story-icon">🔗</span>
+                            </button>
+                            <div class="story-label">+ Create chain</div>
+                        </div>
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-ring" type="button" aria-label="Story from chandrika">
+                                <img src="ilogo.png" alt="chandrika profile" class="story-avatar">
+                            </button>
+                            <div class="story-label">chandrika_...</div>
+                        </div>
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-ring" type="button" aria-label="Story from joygoswa">
+                                <img src="ilogo.png" alt="joygoswa profile" class="story-avatar">
+                            </button>
+                            <div class="story-label">joygoswa...</div>
+                        </div>
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-ring" type="button" aria-label="Story from __alone__">
+                                <img src="ilogo.png" alt="__alone__ profile" class="story-avatar">
+                            </button>
+                            <div class="story-label">__alone__...</div>
+                        </div>
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-ring" type="button" aria-label="Story from apurba12_">
+                                <img src="ilogo.png" alt="apurba12_ profile" class="story-avatar">
+                            </button>
+                            <div class="story-label">apurba12_</div>
+                        </div>
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-ring" type="button" aria-label="Story from ___khush">
+                                <img src="ilogo.png" alt="___khush profile" class="story-avatar">
+                            </button>
+                            <div class="story-label">___khush...</div>
+                        </div>
+                        <div class="story-item" role="listitem">
+                            <button class="story-card story-ring" type="button" aria-label="Story from i.a.m.rani.o">
+                                <img src="ilogo.png" alt="i.a.m.rani.o profile" class="story-avatar">
+                            </button>
+                            <div class="story-label">i.a.m.rani.o...</div>
+                        </div>
+                    </div>
+                    <div class="mood-row">
+                        <button type="button" class="mood-chip active">😀 Happy</button>
+                        <button type="button" class="mood-chip">🔥 Motivation</button>
+                        <button type="button" class="mood-chip">😊 Calm</button>
+                        <button type="button" class="mood-chip">🎵 Music</button>
+                        <button type="button" class="mood-chip">😂 Fun</button>
+                        <button type="button" class="mood-chip">📚 Learn</button>
+                        <button type="button" class="mood-chip">🌍 Explore</button>
+                        <button type="button" class="mood-chip">⭐ Mixed</button>
+                    </div>
+                    <div class="home-mood-note">Because you're in Happy mood</div>
                 </div>
                 <div class="guest-badge" id="guestBadge" hidden>👀 Guest Mode - View Only</div>
                 <ul id="homeFeed" class="stack-list"></ul>

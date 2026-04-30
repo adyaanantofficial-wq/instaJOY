@@ -90,6 +90,12 @@
         setupObservers();
 
         try {
+            const hash = window.location.hash.replace(/^#/, '');
+            const shouldShowAppFromHash = ['home', 'reels', 'search', 'messages', 'notifications', 'profile'].includes(hash)
+                || hash.startsWith('post-')
+                || hash.startsWith('profile-')
+                || hash.startsWith('messages-');
+
             if (state.session.token && state.authState === 'user') {
                 if (dom.landingPage) dom.landingPage.hidden = true;
                 await hydrateSession();
@@ -97,6 +103,13 @@
             } else if (state.authState === 'guest') {
                 // Guest mode: skip auth, go directly to home feed
                 if (dom.landingPage) dom.landingPage.hidden = true;
+                state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
+                persistSession();
+                await enterAuthedApp(true);
+            } else if (shouldShowAppFromHash) {
+                // Support direct links to home/reels/search while preserving guest preview mode.
+                if (dom.landingPage) dom.landingPage.hidden = true;
+                state.authState = 'guest';
                 state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
                 persistSession();
                 await enterAuthedApp(true);
@@ -532,6 +545,36 @@
             const userId = hash.slice(9);
             await switchView('messages');
             await openConversationById(userId);
+            return true;
+        }
+
+        if (hash === 'home') {
+            await switchView('home');
+            return true;
+        }
+
+        if (hash === 'reels') {
+            await switchView('reels');
+            return true;
+        }
+
+        if (hash === 'search') {
+            await switchView('search');
+            return true;
+        }
+
+        if (hash === 'messages') {
+            await switchView('messages');
+            return true;
+        }
+
+        if (hash === 'notifications') {
+            await switchView('notifications');
+            return true;
+        }
+
+        if (hash === 'profile') {
+            await switchView('profile');
             return true;
         }
 
