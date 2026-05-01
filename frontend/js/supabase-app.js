@@ -749,7 +749,7 @@
           setPostReaction(postId, reactionKey);
           const reaction = window.ReactionEngine.getReaction(reactionKey);
           showToast(`Reacted with ${reaction.label}.`, 'success');
-          renderHomeFeed(false);
+          renderHomeFeed();
         });
       }
       return;

@@ -1,6 +1,8 @@
 const { getCollection } = require('./database');
 const { uniqueObjectIds } = require('./text');
 
+const POST_REACTION_TYPES = new Set(['love', 'inspired', 'funny', 'wow', 'useful', 'emotional', 'respect']);
+
 function serializeUserSummary(user) {
     if (!user) {
         return null;
@@ -97,10 +99,44 @@ async function getInteractionMaps(targetType, targetIds, viewerId) {
     return { likeCounts, commentCounts, likedSet };
 }
 
+async function getPostViewerExtras(postIds, viewerId) {
+    const ids = uniqueObjectIds(postIds);
+    const savedSet = new Set();
+    const reactionByPostId = new Map();
+
+    if (!viewerId || !ids.length) {
+        return { savedSet, reactionByPostId };
+    }
+
+    const [savedRows, reactionRows] = await Promise.all([
+        getCollection('savedPosts')
+            .find({ userId: viewerId, postId: { $in: ids } })
+            .project({ postId: 1 })
+            .toArray(),
+        getCollection('postReactions')
+            .find({ userId: viewerId, postId: { $in: ids } })
+            .project({ postId: 1, reactionType: 1 })
+            .toArray(),
+    ]);
+
+    savedRows.forEach((row) => savedSet.add(row.postId.toString()));
+    reactionRows.forEach((row) => {
+        if (row.reactionType && POST_REACTION_TYPES.has(row.reactionType)) {
+            reactionByPostId.set(row.postId.toString(), row.reactionType);
+        }
+    });
+
+    return { savedSet, reactionByPostId };
+}
+
 async function serializePosts(posts, viewerId) {
     const userMap = await getUserMap(posts.map((post) => post.userId));
     const { likeCounts, commentCounts, likedSet } = await getInteractionMaps(
         'post',
+        posts.map((post) => post._id),
+        viewerId
+    );
+    const { savedSet, reactionByPostId } = await getPostViewerExtras(
         posts.map((post) => post._id),
         viewerId
     );
@@ -118,6 +154,8 @@ async function serializePosts(posts, viewerId) {
         likeCount: likeCounts.get(post._id.toString()) || 0,
         commentCount: commentCounts.get(post._id.toString()) || 0,
         isLiked: likedSet.has(post._id.toString()),
+        isSaved: savedSet.has(post._id.toString()),
+        reactionType: reactionByPostId.get(post._id.toString()) || null,
         author: serializeUserSummary(userMap.get(post.userId.toString())),
     }));
 }

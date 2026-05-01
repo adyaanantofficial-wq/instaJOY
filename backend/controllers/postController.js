@@ -6,6 +6,7 @@ const { serializeComments, serializePosts } = require('../utils/serializers');
 const { sanitizePlainText, toObjectId, uniqueObjectIds } = require('../utils/text');
 
 const TEXT_POST_CATEGORIES = new Set(['jokes', 'ideas', 'fun-knowledge']);
+const POST_REACTION_TYPES = new Set(['love', 'inspired', 'funny', 'wow', 'useful', 'emotional', 'respect']);
 
 async function getPersonalizedFeedFilter(viewerId) {
     if (!viewerId) {
@@ -384,10 +385,135 @@ exports.deletePost = asyncHandler(async (req, res) => {
         getCollection('likes').deleteMany({ targetType: 'post', targetId: postId }),
         getCollection('comments').deleteMany({ targetType: 'post', targetId: postId }),
         getCollection('notifications').deleteMany({ entityType: 'post', entityId: postId }),
+        getCollection('savedPosts').deleteMany({ postId }),
+        getCollection('postReactions').deleteMany({ postId }),
     ]);
 
     res.json({
         success: true,
         message: 'Post deleted',
+    });
+});
+
+exports.savePost = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const postId = toObjectId(req.params.postId);
+
+    if (!userId || !postId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    const post = await getCollection('posts').findOne({ _id: postId });
+    if (!post) {
+        return res.status(404).json({
+            success: false,
+            message: 'Post not found',
+        });
+    }
+
+    const saved = getCollection('savedPosts');
+    const existing = await saved.findOne({ userId, postId });
+    if (!existing) {
+        await saved.insertOne({
+            userId,
+            postId,
+            createdAt: new Date(),
+        });
+    }
+
+    res.json({
+        success: true,
+        message: 'Post saved',
+    });
+});
+
+exports.unsavePost = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const postId = toObjectId(req.params.postId);
+
+    if (!userId || !postId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    await getCollection('savedPosts').deleteOne({ userId, postId });
+
+    res.json({
+        success: true,
+        message: 'Post removed from saved',
+    });
+});
+
+exports.setPostReaction = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const postId = toObjectId(req.params.postId);
+    const reactionType = String(req.body.reactionType || req.body.type || '').trim();
+
+    if (!userId || !postId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    if (!POST_REACTION_TYPES.has(reactionType)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid reaction type',
+        });
+    }
+
+    const post = await getCollection('posts').findOne({ _id: postId });
+    if (!post) {
+        return res.status(404).json({
+            success: false,
+            message: 'Post not found',
+        });
+    }
+
+    const reactions = getCollection('postReactions');
+    const now = new Date();
+    await reactions.updateOne(
+        { userId, postId },
+        {
+            $set: {
+                userId,
+                postId,
+                reactionType,
+                updatedAt: now,
+            },
+            $setOnInsert: { createdAt: now },
+        },
+        { upsert: true }
+    );
+
+    res.json({
+        success: true,
+        message: 'Reaction saved',
+        reactionType,
+    });
+});
+
+exports.clearPostReaction = asyncHandler(async (req, res) => {
+    const userId = toObjectId(req.userId);
+    const postId = toObjectId(req.params.postId);
+
+    if (!userId || !postId) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid request',
+        });
+    }
+
+    await getCollection('postReactions').deleteOne({ userId, postId });
+
+    res.json({
+        success: true,
+        message: 'Reaction cleared',
     });
 });

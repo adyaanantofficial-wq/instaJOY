@@ -238,6 +238,109 @@
         }
         return true;
     }
+
+    const GUEST_ENGAGEMENT_KEY = 'instajoy_guest_engagement_v1';
+    const GUEST_COMMENTS_KEY = 'instajoy_guest_comments_v1';
+
+    function readGuestEngagementMap() {
+        try {
+            return JSON.parse(sessionStorage.getItem(GUEST_ENGAGEMENT_KEY) || '{}');
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function writeGuestEngagementMap(map) {
+        try {
+            sessionStorage.setItem(GUEST_ENGAGEMENT_KEY, JSON.stringify(map || {}));
+        } catch (_) {}
+    }
+
+    function persistGuestPostFields(postId, patch) {
+        if (!postId || !patch) {
+            return;
+        }
+        const map = readGuestEngagementMap();
+        map[postId] = { ...(map[postId] || {}), ...patch };
+        writeGuestEngagementMap(map);
+    }
+
+    function mergeGuestFieldsOntoPost(post) {
+        if (!isGuestMode() || !post || !post.id) {
+            return;
+        }
+        const o = readGuestEngagementMap()[post.id];
+        if (!o || typeof o !== 'object') {
+            return;
+        }
+        if (typeof o.isLiked === 'boolean') {
+            post.isLiked = o.isLiked;
+            post.liked = o.isLiked;
+        }
+        if (Number.isFinite(o.likeCount)) {
+            post.likeCount = o.likeCount;
+            post.likes = o.likeCount;
+        }
+        if (typeof o.isSaved === 'boolean') {
+            post.isSaved = o.isSaved;
+        }
+        if (o.reactionType) {
+            post.reactionType = o.reactionType;
+        }
+        if (Number.isFinite(o.commentCount)) {
+            post.commentCount = o.commentCount;
+            post.comments = o.commentCount;
+        }
+    }
+
+    function applyGuestEngagementToFeedItems(items) {
+        if (!isGuestMode() || !Array.isArray(items)) {
+            return;
+        }
+        items.forEach(mergeGuestFieldsOntoPost);
+    }
+
+    function readGuestCommentStore() {
+        try {
+            return JSON.parse(sessionStorage.getItem(GUEST_COMMENTS_KEY) || '{}');
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function writeGuestCommentStore(store) {
+        try {
+            sessionStorage.setItem(GUEST_COMMENTS_KEY, JSON.stringify(store || {}));
+        } catch (_) {}
+    }
+
+    function getGuestLocalComments(postId) {
+        const store = readGuestCommentStore();
+        return Array.isArray(store[postId]) ? store[postId] : [];
+    }
+
+    function appendGuestLocalComment(postId, text) {
+        const store = readGuestCommentStore();
+        const list = Array.isArray(store[postId]) ? store[postId] : [];
+        const username = state.session.user?.username || 'You';
+        list.push({
+            id: `local-${Date.now()}`,
+            text,
+            createdAt: new Date().toISOString(),
+            author: {
+                username,
+                profileImage: state.session.user?.profileImage || state.session.user?.avatar || DEFAULT_AVATAR,
+            },
+        });
+        store[postId] = list;
+        writeGuestCommentStore(store);
+    }
+
+    function mergeCommentLists(serverComments, localComments) {
+        const merged = (serverComments || []).concat(localComments || []);
+        merged.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+        return merged;
+    }
     
     function handleGuest() {
         // Switch to guest mode and clear any existing authenticated session
@@ -739,13 +842,15 @@
             state.home.items = state.home.items.concat(filteredPosts);
             state.home.cursor = response.nextCursor || null;
             state.home.hasMore = Boolean(response.hasMore);
-            state.home.items = rankFeedItems(state.home.items, state.home.mood);
 
             if (!state.home.items.length && isGuestMode()) {
                 const demoData = window.INSTAJOY_DEMO_DATA || { posts: [] };
                 state.home.items = Array.isArray(demoData.posts) ? filterFeedPosts(demoData.posts, state.home.mood) : [];
                 state.home.items = state.home.items.length ? state.home.items : (demoData.posts || []);
             }
+
+            applyGuestEngagementToFeedItems(state.home.items);
+            state.home.items = rankFeedItems(state.home.items, state.home.mood);
 
             renderHomeFeed();
         } catch (error) {
@@ -755,6 +860,8 @@
                 state.home.items = Array.isArray(demoData.posts) ? filterFeedPosts(demoData.posts, state.home.mood) : [];
                 state.home.items = state.home.items.length ? state.home.items : (demoData.posts || []);
                 state.home.hasMore = false;
+                applyGuestEngagementToFeedItems(state.home.items);
+                state.home.items = rankFeedItems(state.home.items, state.home.mood);
                 renderHomeFeed();
             } else {
                 showToast(error.message || 'Failed to load feed', 'error');
@@ -770,6 +877,8 @@
 
     function renderHomeFeed() {
         if (!dom.homeFeed) return;
+
+        applyGuestEngagementToFeedItems(state.home.items);
         
         if (!state.home.items.length) {
             if (state.home.loading) {
@@ -1290,6 +1399,7 @@
             state.profile.username = normalized;
             state.profile.data = profileResponse.profile;
             state.profile.posts = postsResponse.posts || [];
+            applyGuestEngagementToFeedItems(state.profile.posts);
             renderProfile();
             updateTopbar('profile');
         } catch (error) {
@@ -1596,12 +1706,30 @@
     async function handleCommentSubmit(event) {
         event.preventDefault();
 
-        if (!requireLogin('commenting')) return;
-
-        const text = dom.commentInput.value.trim();
+        const text = dom.commentInput?.value.trim();
         if (!text || !state.comments.targetType || !state.comments.targetId) {
             return;
         }
+
+        if (isGuestMode()) {
+            if (state.comments.targetType !== 'post') {
+                showToast('Sign in to comment on reels.', 'info');
+                return;
+            }
+            appendGuestLocalComment(state.comments.targetId, text);
+            updateCommentCount(state.home.items, state.comments.targetId, 1);
+            updateCommentCount(state.profile.posts, state.comments.targetId, 1);
+            const post = state.home.items.find((p) => p.id === state.comments.targetId)
+                || state.profile.posts.find((p) => p.id === state.comments.targetId);
+            const cc = post ? (post.commentCount ?? post.comments ?? 0) : 0;
+            persistGuestPostFields(state.comments.targetId, { commentCount: cc });
+            dom.commentInput.value = '';
+            await openComments(state.comments.targetType, state.comments.targetId);
+            showToast('Comment added (saved on this device).', 'success');
+            return;
+        }
+
+        if (!requireLogin('commenting')) return;
 
         try {
             if (state.comments.targetType === 'post') {
@@ -1627,22 +1755,35 @@
     }
 
     async function openComments(targetType, targetId) {
+        if (!dom.commentsModal || !dom.commentsList) {
+            showToast('Comments panel is not available on this page.', 'error');
+            return;
+        }
+
         state.comments.targetType = targetType;
         state.comments.targetId = targetId;
         openModal(dom.commentsModal);
         dom.commentsList.innerHTML = '<div class="empty-state">Loading comments...</div>';
 
+        const endpoint =
+            targetType === 'post'
+                ? `/posts/${targetId}/comments`
+                : `/reels/${targetId}/comments`;
+
+        let serverComments = [];
         try {
-            const endpoint =
-                targetType === 'post'
-                    ? `/posts/${targetId}/comments`
-                    : `/reels/${targetId}/comments`;
-            const response = await apiRequest(endpoint);
-            renderComments(response.comments || []);
+            const response = await apiRequest(endpoint, { auth: false });
+            serverComments = response.comments || [];
         } catch (error) {
-            dom.commentsList.innerHTML = '<div class="empty-state">Could not load comments.</div>';
-            showToast(error.message || 'Failed to load comments', 'error');
+            if (!isGuestMode()) {
+                dom.commentsList.innerHTML = '<div class="empty-state">Could not load comments.</div>';
+                showToast(error.message || 'Failed to load comments', 'error');
+                return;
+            }
         }
+
+        const localExtras = isGuestMode() && targetType === 'post' ? getGuestLocalComments(targetId) : [];
+        renderComments(mergeCommentLists(serverComments, localExtras));
     }
 
     function renderComments(comments) {
@@ -1755,26 +1896,52 @@
         }
     }
 
-    async function togglePostLike(postId) {
-        if (!requireLogin('liking posts')) return;
+    function collectPostTargets(postId) {
+        return [state.home.items.find((item) => item.id === postId), state.profile.posts.find((item) => item.id === postId)].filter(Boolean);
+    }
 
-        const targets = [state.home.items.find((item) => item.id === postId), state.profile.posts.find((item) => item.id === postId)].filter(Boolean);
+    async function togglePostLike(postId) {
+        const targets = collectPostTargets(postId);
         if (!targets.length) {
             return;
         }
+
+        if (isGuestMode()) {
+            const post = targets[0];
+            const wasLiked = Boolean(post.isLiked || post.liked);
+            const base = Number(post.likeCount ?? post.likes ?? 0);
+            const nextLiked = !wasLiked;
+            const nextCount = Math.max(0, base + (nextLiked ? 1 : -1));
+            targets.forEach((target) => {
+                target.isLiked = nextLiked;
+                target.liked = nextLiked;
+                target.likeCount = nextCount;
+                target.likes = nextCount;
+            });
+            persistGuestPostFields(postId, { isLiked: nextLiked, likeCount: nextCount });
+            renderHomeFeed();
+            if (state.activeView === 'profile') {
+                renderProfile();
+            }
+            return;
+        }
+
+        if (!requireLogin('liking posts')) return;
 
         try {
             if (targets[0].isLiked) {
                 await apiRequest(`/posts/${postId}/like`, { method: 'DELETE' });
                 targets.forEach((target) => {
                     target.isLiked = false;
-                    target.likeCount = Math.max(0, target.likeCount - 1);
+                    target.likeCount = Math.max(0, (target.likeCount ?? target.likes ?? 0) - 1);
+                    target.likes = target.likeCount;
                 });
             } else {
                 await apiRequest(`/posts/${postId}/like`, { method: 'POST' });
                 targets.forEach((target) => {
                     target.isLiked = true;
-                    target.likeCount += 1;
+                    target.likeCount = (target.likeCount ?? target.likes ?? 0) + 1;
+                    target.likes = target.likeCount;
                 });
             }
 
@@ -1785,6 +1952,103 @@
         } catch (error) {
             showToast(error.message || 'Could not update like', 'error');
         }
+    }
+
+    async function toggleSavePost(postId) {
+        const targets = collectPostTargets(postId);
+        if (!targets.length) {
+            return;
+        }
+
+        if (isGuestMode()) {
+            const next = !targets[0].isSaved;
+            targets.forEach((t) => { t.isSaved = next; });
+            persistGuestPostFields(postId, { isSaved: next });
+            renderHomeFeed();
+            showToast(next ? 'Saved to this device.' : 'Removed from saved.', 'success');
+            return;
+        }
+
+        if (!requireLogin('saving posts')) return;
+
+        try {
+            if (targets[0].isSaved) {
+                await apiRequest(`/posts/${postId}/save`, { method: 'DELETE' });
+                targets.forEach((t) => { t.isSaved = false; });
+                showToast('Removed from saved.', 'success');
+            } else {
+                await apiRequest(`/posts/${postId}/save`, { method: 'POST' });
+                targets.forEach((t) => { t.isSaved = true; });
+                showToast('Post saved.', 'success');
+            }
+            renderHomeFeed();
+        } catch (error) {
+            showToast(error.message || 'Could not update save', 'error');
+        }
+    }
+
+    function openPostReactionPicker(postId, anchorEl) {
+        const targets = collectPostTargets(postId);
+        if (!targets.length) {
+            return;
+        }
+
+        if (isGuestMode()) {
+            if (!window.ReactionEngine?.renderRadialMenu) {
+                showToast('Reactions are unavailable.', 'error');
+                return;
+            }
+            window.ReactionEngine.renderRadialMenu(postId, anchorEl, (reactionKey) => {
+                targets.forEach((t) => { t.reactionType = reactionKey; });
+                persistGuestPostFields(postId, { reactionType: reactionKey });
+                renderHomeFeed();
+                const r = window.ReactionEngine.getReaction(reactionKey);
+                showToast(`Reacted with ${r.label}.`, 'success');
+            });
+            return;
+        }
+
+        if (!requireLogin('reacting to posts')) return;
+
+        if (!window.ReactionEngine?.renderRadialMenu) {
+            showToast('Reactions are unavailable.', 'error');
+            return;
+        }
+
+        window.ReactionEngine.renderRadialMenu(postId, anchorEl, async (reactionKey) => {
+            try {
+                await apiRequest(`/posts/${postId}/reaction`, {
+                    method: 'POST',
+                    body: { reactionType: reactionKey },
+                });
+                collectPostTargets(postId).forEach((t) => { t.reactionType = reactionKey; });
+                renderHomeFeed();
+                const r = window.ReactionEngine.getReaction(reactionKey);
+                showToast(`Reacted with ${r.label}.`, 'success');
+            } catch (error) {
+                showToast(error.message || 'Could not save reaction', 'error');
+            }
+        });
+    }
+
+    async function sharePostNative(postId) {
+        const shareUrl = `${window.location.origin}${window.location.pathname}#post-${encodeURIComponent(postId)}`;
+        try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: 'instaJOY',
+                    text: 'Check out this post on instaJOY',
+                    url: shareUrl,
+                });
+                showToast('Share completed.', 'success');
+                return;
+            }
+        } catch (err) {
+            if (err && err.name === 'AbortError') {
+                return;
+            }
+        }
+        await copyShareLink(shareUrl, 'Post link copied.');
     }
 
     async function toggleReelLike(reelId) {
@@ -1888,6 +2152,16 @@
             return;
         }
 
+        if (action === 'save-post' && target.dataset.postId) {
+            await toggleSavePost(target.dataset.postId);
+            return;
+        }
+
+        if (action === 'react-post' && target.dataset.postId) {
+            openPostReactionPicker(target.dataset.postId, target);
+            return;
+        }
+
         if (action === 'toggle-reel-like') {
             await toggleReelLike(target.dataset.reelId);
             return;
@@ -1923,9 +2197,8 @@
             return;
         }
 
-        if (action === 'share-post') {
-            const shareUrl = `${window.location.origin}${window.location.pathname}#post-${target.dataset.postId}`;
-            await copyShareLink(shareUrl, 'Post link copied.');
+        if (action === 'share-post' && target.dataset.postId) {
+            await sharePostNative(target.dataset.postId);
             return;
         }
 
@@ -2044,10 +2317,16 @@
     }
 
     function openModal(element) {
+        if (!element) {
+            return;
+        }
         element.hidden = false;
     }
 
     function closeModal(element) {
+        if (!element) {
+            return;
+        }
         element.hidden = true;
         if (element === dom.commentsModal) {
             dom.commentInput.value = '';
@@ -2065,18 +2344,22 @@
         const text = post.text || post.content?.text || '';
         const image = post.imageData || post.content?.image || '';
         const timestamp = post.createdAt || post.timestamp || new Date();
-        const likeCount = post.likeCount || post.likes || 0;
-        const commentCount = post.commentCount || post.comments || 0;
+        const likeCount = post.likeCount ?? post.likes ?? 0;
+        const commentCount = post.commentCount ?? post.comments ?? 0;
         const isLiked = post.isLiked || post.liked || false;
+        const isSaved = Boolean(post.isSaved);
+        const reactionKey = post.reactionType || '';
+        const activeReaction = reactionKey && window.ReactionEngine
+            ? window.ReactionEngine.getReaction(reactionKey)
+            : null;
         const showDelete = author.id === state.session.user?.id && !compact;
-        
+
         const textContent = text ? `<p class="post-text">${escapeHtml(text)}</p>` : '';
         const imageContent = image
             ? `<img class="${compact ? 'preview-image' : 'post-media'}" src="${image}" alt="${escapeHtml(text || 'instaJOY post image')}" loading="lazy" onerror="this.style.display='none'">`
             : '';
         const badge = post.category ? `<span class="post-badge">${escapeHtml(formatCategory(post.category))}</span>` : '';
 
-        // Format time display
         let timeDisplay;
         if (typeof timestamp === 'string') {
             timeDisplay = formatDateTime(timestamp);
@@ -2086,8 +2369,20 @@
             timeDisplay = 'just now';
         }
 
+        const reactionSummary = activeReaction
+            ? `<div class="post-reaction-summary">You reacted <strong>${escapeHtml(activeReaction.emoji)} ${escapeHtml(activeReaction.label)}</strong></div>`
+            : '';
+
+        const heartFill = isLiked ? '#ed4956' : 'none';
+        const heartStroke = isLiked ? '#ed4956' : 'currentColor';
+        const bookmarkFill = isSaved ? 'currentColor' : 'none';
+
+        const openWrap = compact ? '' : '<li class="feed-post-wrap">';
+        const closeWrap = compact ? '' : '</li>';
+
         return `
-            <article class="post-card" data-post-id="${post.id}">
+            ${openWrap}
+            <article class="post-card feed-post-card" data-post-id="${post.id}">
                 <div class="card-header">
                     <button class="avatar-row text-button" type="button" data-action="open-profile" data-username="${escapeHtml(author.username || '')}">
                         <img class="avatar" src="${getAvatar(author.profileImage || author.avatar)}" alt="${escapeHtml(author.username || 'User')}" onerror="this.src='ilogo.png'">
@@ -2102,19 +2397,37 @@
                     ${badge}
                     ${imageContent}
                     ${textContent}
-                    <div class="action-row">
-                        <button class="chip-button ${isLiked ? 'is-active' : ''}" type="button" data-action="toggle-post-like" data-post-id="${post.id}">
-                            ${isLiked ? 'Unlike' : 'Like'} • ${likeCount}
+                </div>
+                <div class="post-engagement-stats">
+                    <span class="post-stat-pair"><strong>${escapeHtml(String(likeCount))}</strong> likes</span>
+                    <button type="button" class="post-stat-pair post-stat-button text-button" data-action="open-comments" data-target-type="post" data-target-id="${post.id}">
+                        <strong>${escapeHtml(String(commentCount))}</strong> comments
+                    </button>
+                </div>
+                <div class="post-action-toolbar">
+                    <div class="post-action-icons">
+                        <button class="icon-action-btn ${isLiked ? 'is-liked' : ''}" type="button" data-action="toggle-post-like" data-post-id="${post.id}" aria-label="${isLiked ? 'Unlike' : 'Like'}">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="${heartFill}" stroke="${heartStroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         </button>
-                        <button class="chip-button" type="button" data-action="open-comments" data-target-type="post" data-target-id="${post.id}">
-                            Comment • ${commentCount}
+                        <button class="icon-action-btn ${activeReaction ? 'is-reacting' : ''}" type="button" data-action="react-post" data-post-id="${post.id}" aria-label="React" title="${activeReaction ? `Reacted: ${activeReaction.label}` : 'React'}">
+                            ${activeReaction
+            ? `<span class="reaction-toolbar-emoji">${escapeHtml(activeReaction.emoji)}</span>`
+            : `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>`}
                         </button>
-                        <button class="chip-button" type="button" data-action="share-post" data-post-id="${post.id}">
-                            Share
+                        <button class="icon-action-btn" type="button" data-action="open-comments" data-target-type="post" data-target-id="${post.id}" aria-label="Comment">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        </button>
+                        <button class="icon-action-btn" type="button" data-action="share-post" data-post-id="${post.id}" aria-label="Share">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                         </button>
                     </div>
+                    <button class="icon-action-btn ${isSaved ? 'is-saved' : ''}" type="button" data-action="save-post" data-post-id="${post.id}" aria-label="${isSaved ? 'Unsave' : 'Save'}" title="${isSaved ? 'Saved' : 'Save post'}">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="${bookmarkFill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+                    </button>
                 </div>
+                ${reactionSummary}
             </article>
+            ${closeWrap}
         `;
     }
 
@@ -2502,7 +2815,10 @@
     function updateCommentCount(items, targetId, delta) {
         const item = (items || []).find((entry) => entry.id === targetId);
         if (item) {
-            item.commentCount = Math.max(0, (item.commentCount || 0) + delta);
+            const base = item.commentCount ?? item.comments ?? 0;
+            const next = Math.max(0, base + delta);
+            item.commentCount = next;
+            item.comments = next;
         }
     }
 })();

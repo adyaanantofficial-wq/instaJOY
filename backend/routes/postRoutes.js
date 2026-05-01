@@ -13,6 +13,10 @@ router.get('/:postId', optionalAuth, postController.getPostById);
 router.get('/:postId/comments', optionalAuth, postController.getComments);
 router.post('/:postId/like', protect, postController.likePost);
 router.delete('/:postId/like', protect, postController.unlikePost);
+router.post('/:postId/save', protect, postController.savePost);
+router.delete('/:postId/save', protect, postController.unsavePost);
+router.post('/:postId/reaction', protect, postController.setPostReaction);
+router.delete('/:postId/reaction', protect, postController.clearPostReaction);
 router.post('/:postId/comments', protect, createContentLimiter, postController.commentOnPost);
 router.delete('/:postId', protect, postController.deletePost);
 

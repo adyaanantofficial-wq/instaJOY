@@ -1080,6 +1080,124 @@
                 font-size: 12px;
             }
         }
+
+        .feed-post-wrap {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .post-engagement-stats {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 16px 4px;
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        .post-stat-pair strong {
+            color: #1f2937;
+        }
+
+        .post-stat-button {
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .post-action-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 12px 12px;
+        }
+
+        .post-action-icons {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .icon-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            border: none;
+            border-radius: 12px;
+            background: transparent;
+            color: #334155;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+        }
+
+        .icon-action-btn:hover {
+            background: rgba(148, 163, 184, 0.15);
+        }
+
+        .icon-action-btn.is-liked {
+            color: #ed4956;
+        }
+
+        .icon-action-btn.is-saved {
+            color: #0f172a;
+        }
+
+        .reaction-toolbar-emoji {
+            font-size: 1.35rem;
+            line-height: 1;
+        }
+
+        .feed-post-card .post-reaction-summary {
+            padding: 0 16px 12px;
+            font-size: 13px;
+            color: #475569;
+        }
+
+        .reaction-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 400;
+            background: rgba(15, 23, 42, 0.22);
+        }
+
+        .reaction-option {
+            position: fixed;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: none;
+            background: #ffffff;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+            font-size: 1.45rem;
+            cursor: pointer;
+            z-index: 401;
+            transition: transform 0.15s ease;
+        }
+
+        .reaction-option:hover {
+            transform: scale(1.08);
+        }
+
+        .reaction-bubble {
+            position: fixed;
+            font-size: 2rem;
+            pointer-events: none;
+            z-index: 402;
+            transform: translate(-50%, -50%) scale(0.6);
+            opacity: 0;
+            transition: transform 0.35s ease, opacity 0.35s ease;
+        }
+
+        .reaction-bubble.visible {
+            transform: translate(-50%, -120%) scale(1);
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -1107,10 +1225,6 @@
 
             <!-- Home Feed View -->
             <section id="homeView" class="view">
-                <div class="view-intro">
-                    <h2>Fresh Joy</h2>
-                    <p>Posts from your network and trending content worldwide</p>
-                </div>
                 <div class="home-top-panel">
                     <div id="storiesShell" class="stories-shell" role="list"></div>
                     <div id="moodChipRow" class="mood-row"></div>
@@ -1249,6 +1363,21 @@
         </nav>
     </div>
 
+    <!-- Comments -->
+    <div id="commentsModal" class="modal-shell" hidden>
+        <div class="modal-card">
+            <div class="panel-header">
+                <h3>Comments</h3>
+                <button data-close-modal="commentsModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <div id="commentsList" class="stack-list compact-list"></div>
+            <form id="commentForm" class="message-composer modal-composer">
+                <input id="commentInput" type="text" maxlength="280" placeholder="Write a comment" autocomplete="off">
+                <button class="primary-button" type="submit">Post</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Toast Host -->
     <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
 
@@ -1373,6 +1502,7 @@
 
     <!-- Scripts in order -->
     <script src="frontend/js/config.js"></script>
+    <script src="frontend/js/reactionEngine.js"></script>
     <script src="frontend/js/app.js"></script>
 </body>
 </html>

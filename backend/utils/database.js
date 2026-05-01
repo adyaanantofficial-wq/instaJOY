@@ -141,6 +141,14 @@ async function createIndexes(database) {
             { key: { followingId: 1, createdAt: -1 } },
             { key: { followerId: 1, createdAt: -1 } },
         ]),
+        database.collection('savedPosts').createIndexes([
+            { key: { userId: 1, postId: 1 }, unique: true },
+            { key: { postId: 1, createdAt: -1 } },
+        ]),
+        database.collection('postReactions').createIndexes([
+            { key: { userId: 1, postId: 1 }, unique: true },
+            { key: { postId: 1, createdAt: -1 } },
+        ]),
     ]);
 }
 
