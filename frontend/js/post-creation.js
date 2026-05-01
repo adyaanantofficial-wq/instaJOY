@@ -26,6 +26,7 @@
     init() {
       this.cacheDom();
       this.setupEventListeners();
+      this.selectPostType(this.state.postType);
     },
 
     cacheDom() {
@@ -134,10 +135,19 @@
       });
 
       // Show/hide sections
-      document.getElementById('textSection').classList.toggle('active', type === 'text');
-      document.getElementById('photoSection').classList.toggle('active', type === 'photo');
-      document.getElementById('carouselSection').classList.toggle('active', type === 'carousel');
-      document.getElementById('videoSection').classList.toggle('active', type === 'video');
+      const sectionMap = {
+        text: this.dom.textSection,
+        photo: this.dom.photoSection,
+        carousel: this.dom.carouselSection,
+        video: this.dom.videoSection,
+      };
+
+      Object.entries(sectionMap).forEach(([key, section]) => {
+        if (!section) return;
+        const isActive = key === type;
+        section.classList.toggle('active', isActive);
+        section.hidden = !isActive;
+      });
     },
 
     handlePhotoSelect(e) {
@@ -529,6 +539,7 @@
         this.showInfo('Login to post. Guest mode is view-only.');
         return;
       }
+      this.resetForm();
       this.dom.modal.classList.remove('hidden');
     },
 

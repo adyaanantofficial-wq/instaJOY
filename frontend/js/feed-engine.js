@@ -23,6 +23,64 @@
       this.subscribeToFeedUpdates();
     },
 
+    async fetchProfilesByIds(supabase, userIds) {
+      const uniqueIds = [...new Set((userIds || []).filter(Boolean))];
+      if (!uniqueIds.length) {
+        return new Map();
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .in('id', uniqueIds);
+
+      if (error) throw error;
+      return new Map((data || []).map((profile) => [profile.id, profile]));
+    },
+
+    async fetchCountMap(supabase, tableName, postIds) {
+      const uniqueIds = [...new Set((postIds || []).filter(Boolean))];
+      if (!uniqueIds.length) {
+        return new Map();
+      }
+
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('post_id')
+        .in('post_id', uniqueIds);
+
+      if (error) throw error;
+
+      const map = new Map();
+      (data || []).forEach((row) => {
+        map.set(row.post_id, (map.get(row.post_id) || 0) + 1);
+      });
+      return map;
+    },
+
+    async enrichPosts(supabase, posts, user) {
+      const rows = Array.isArray(posts) ? posts : [];
+      if (!rows.length) {
+        return [];
+      }
+
+      const [profileMap, likeCountMap, commentCountMap] = await Promise.all([
+        this.fetchProfilesByIds(supabase, rows.map((post) => post.user_id)),
+        this.fetchCountMap(supabase, 'likes', rows.map((post) => post.id)),
+        this.fetchCountMap(supabase, 'comments', rows.map((post) => post.id))
+      ]);
+
+      return this.processPosts(
+        rows.map((post) => ({
+          ...post,
+          profile: profileMap.get(post.user_id) || null,
+          likeCount: likeCountMap.get(post.id) || 0,
+          commentCount: commentCountMap.get(post.id) || 0
+        })),
+        user
+      );
+    },
+
     /**
      * Load feed posts from Supabase
      * Priority order:
@@ -63,37 +121,8 @@
     async loadAuthenticatedFeed(supabase, user) {
       let query = supabase
         .from('posts')
-        .select(`
-          id,
-          user_id,
-          type,
-          category,
-          caption,
-          content,
-          image_url,
-          media_url,
-          carousel_urls,
-          hashtags,
-          location,
-          privacy,
-          allow_comments,
-          allow_likes,
-          created_at,
-          updated_at,
-          profiles (
-            id,
-            username,
-            display_name,
-            avatar_url
-          ),
-          likes:likes(count),
-          comments:comments(count),
-          saved_posts:saved_posts(count)
-        `)
+        .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
         .order('created_at', { ascending: false });
-
-      // Filter by privacy and auth
-      query = query.in('privacy', ['public', 'friends']);
 
       // Pagination
       if (this.state.cursor) {
@@ -108,7 +137,7 @@
       if (error) throw error;
 
       // Process posts
-      const processed = this.processPosts(posts, user);
+      const processed = await this.enrichPosts(supabase, posts, user);
 
       // Update state
       if (this.state.cursor === null) {
@@ -131,35 +160,13 @@
     async loadGuestFeed(supabase) {
       const { data: posts, error } = await supabase
         .from('posts')
-        .select(`
-          id,
-          user_id,
-          type,
-          category,
-          caption,
-          content,
-          image_url,
-          media_url,
-          carousel_urls,
-          hashtags,
-          location,
-          created_at,
-          profiles (
-            id,
-            username,
-            display_name,
-            avatar_url
-          ),
-          likes:likes(count),
-          comments:comments(count)
-        `)
-        .eq('privacy', 'public')
+        .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
         .order('created_at', { ascending: false })
         .limit(this.state.pageSize);
 
       if (error) throw error;
 
-      const processed = this.processPosts(posts, null);
+      const processed = await this.enrichPosts(supabase, posts, null);
       this.state.posts = processed;
       this.state.hasMore = posts.length === this.state.pageSize;
 
@@ -172,17 +179,17 @@
     processPosts(posts, user) {
       return posts.map(post => ({
         ...post,
-        author: post.profiles ? {
-          id: post.profiles.id,
-          username: post.profiles.username,
-          displayName: post.profiles.display_name,
-          avatar: post.profiles.avatar_url
+        author: post.profile ? {
+          id: post.profile.id,
+          username: post.profile.username,
+          displayName: post.profile.display_name,
+          avatar: post.profile.avatar_url
         } : null,
-        likeCount: post.likes?.[0]?.count || 0,
-        commentCount: post.comments?.[0]?.count || 0,
-        savedCount: post.saved_posts?.[0]?.count || 0,
+        likeCount: post.likeCount || 0,
+        commentCount: post.commentCount || 0,
+        savedCount: post.savedCount || 0,
         liked: false,  // Will be hydrated from user's likes
-        saved: false,   // Will be hydrated from user's saves
+        saved: false,
         isOwnPost: user ? post.user_id === user.id : false
       }));
     },
@@ -201,19 +208,12 @@
         .select('post_id')
         .eq('user_id', user.id);
 
-      // Get saved posts
-      const { data: savedPosts } = await supabase
-        .from('saved_posts')
-        .select('post_id')
-        .eq('user_id', user.id);
-
       // Mark posts
       const likedIds = new Set(likedPosts?.map(p => p.post_id) || []);
-      const savedIds = new Set(savedPosts?.map(p => p.post_id) || []);
 
       this.state.posts.forEach(post => {
         post.liked = likedIds.has(post.id);
-        post.saved = savedIds.has(post.id);
+        post.saved = Boolean(post.saved);
       });
     },
 
@@ -310,15 +310,6 @@
         return false;
       }
 
-      const supabase = window.supabaseClient;
-      const { error } = await supabase
-        .from('saved_posts')
-        .insert({ post_id: postId, user_id: user.id });
-
-      if (error && error.code !== '23505') {
-        throw error;
-      }
-
       // Update UI
       const post = this.state.posts.find(p => p.id === postId);
       if (post) {
@@ -335,13 +326,6 @@
     async unsavePost(postId) {
       const user = window.SupabaseAuth?.getUser();
       if (!user) return false;
-
-      const supabase = window.supabaseClient;
-      await supabase
-        .from('saved_posts')
-        .delete()
-        .eq('post_id', postId)
-        .eq('user_id', user.id);
 
       // Update UI
       const post = this.state.posts.find(p => p.id === postId);
@@ -360,21 +344,20 @@
       const supabase = window.supabaseClient;
       const { data: comments, error } = await supabase
         .from('comments')
-        .select(`
-          id,
-          content,
-          created_at,
-          user_id,
-          profiles (
-            username,
-            avatar_url
-          )
-        `)
+        .select('id, body, created_at, user_id')
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-      return comments || [];
+      const profileMap = await this.fetchProfilesByIds(supabase, (comments || []).map((comment) => comment.user_id));
+      return (comments || []).map((comment) => ({
+        ...comment,
+        content: comment.body,
+        profiles: {
+          username: profileMap.get(comment.user_id)?.username || 'member',
+          avatar_url: profileMap.get(comment.user_id)?.avatar_url || ''
+        }
+      }));
     },
 
     /**
@@ -393,7 +376,7 @@
         .insert({
           post_id: postId,
           user_id: user.id,
-          content: content
+          body: content
         })
         .select()
         .single();
@@ -438,28 +421,15 @@
 
       const { data: posts, error } = await supabase
         .from('posts')
-        .select(`
-          id,
-          user_id,
-          type,
-          category,
-          caption,
-          content,
-          hashtags,
-          created_at,
-          profiles (
-            username,
-            avatar_url
-          )
-        `)
+        .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
         .or(
-          `content.ilike.%${query}%,caption.ilike.%${query}%,hashtags.ilike.%${query}%`
+          `content.ilike.%${query}%,caption.ilike.%${query}%`
         )
         .order('created_at', { ascending: false })
         .limit(20);
 
       if (error) throw error;
-      return this.processPosts(posts, null);
+      return this.enrichPosts(supabase, posts, null);
     },
 
     /**
@@ -469,13 +439,13 @@
       const supabase = window.supabaseClient;
       const { data: posts, error } = await supabase
         .from('posts')
-        .select('*')
-        .ilike('hashtags', `%${hashtag}%`)
+        .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
+        .or(`caption.ilike.%${hashtag}%,content.ilike.%${hashtag}%`)
         .order('created_at', { ascending: false })
         .limit(50);
 
       if (error) throw error;
-      return this.processPosts(posts, null);
+      return this.enrichPosts(supabase, posts, null);
     },
 
     /**
@@ -490,24 +460,18 @@
 
       const { data: posts, error } = await supabase
         .from('posts')
-        .select(`
-          id,
-          user_id,
-          content,
-          caption,
-          created_at,
-          profiles (username, avatar_url),
-          likes:likes(count)
-        `)
+        .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
         .gte('created_at', sevenDaysAgo.toISOString())
         .order('created_at', { ascending: false })
         .limit(50);
 
       if (error) throw error;
 
+      const processed = await this.enrichPosts(supabase, posts, null);
+
       // Sort by like count
-      return posts
-        .sort((a, b) => (b.likes?.[0]?.count || 0) - (a.likes?.[0]?.count || 0))
+      return processed
+        .sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0))
         .slice(0, 20);
     },
 

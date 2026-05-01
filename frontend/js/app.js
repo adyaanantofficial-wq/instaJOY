@@ -35,12 +35,15 @@
         },
         stories: {
             items: [],
+            chainItems: [],
             loading: false,
             lastRefreshed: null,
+            refreshInterval: null,
         },
         storyViewer: {
             activeIndex: 0,
             isOpen: false,
+            advanceTimer: null,
         },
         reels: {
             items: [],
@@ -200,6 +203,7 @@
         dom.moodChipRow = document.getElementById('moodChipRow') || document.getElementById('moodSelector');
         dom.moodHeading = document.getElementById('moodHeading') || document.getElementById('moodLabel');
         dom.storyModal = document.getElementById('storyModal');
+        dom.storyImage = document.getElementById('storyImage');
         dom.storyVideo = document.getElementById('storyVideo');
         dom.storyProgress = document.getElementById('storyProgress');
         dom.storyMetaAvatar = document.getElementById('storyMetaAvatar');
@@ -435,6 +439,7 @@
         document.getElementById('guestBtn')?.addEventListener('click', handleGuest);
         
         document.body.addEventListener('click', handleBodyClick);
+        document.addEventListener('keydown', handleGlobalKeydown);
 
         dom.topbarAction?.addEventListener('click', handleTopbarAction);
         dom.notificationButton?.addEventListener('click', () => switchView('notifications'));
@@ -1169,20 +1174,28 @@
         state.stories.loading = true;
 
         try {
-            const response = await apiRequest('/stories?limit=10', { auth: false });
-            state.stories.items = Array.isArray(response.stories) ? response.stories : [];
+            const [response, chainResponse] = await Promise.all([
+                apiRequest('/stories?limit=10', { auth: false }),
+                apiRequest('/story-chains?limit=6', { auth: false }),
+            ]);
+            state.stories.items = Array.isArray(response.stories) ? response.stories.map(normalizeStoryItem).filter(Boolean) : [];
+            state.stories.chainItems = Array.isArray(chainResponse.chains) ? chainResponse.chains : [];
         } catch (error) {
-            state.stories.items = Array.isArray(window.INSTAJOY_DEMO_DATA?.stories) ? window.INSTAJOY_DEMO_DATA.stories.slice() : [];
+            state.stories.items = Array.isArray(window.INSTAJOY_DEMO_DATA?.stories)
+                ? window.INSTAJOY_DEMO_DATA.stories.map(normalizeStoryItem).filter(Boolean)
+                : [];
+            state.stories.chainItems = [];
         } finally {
             if (!state.stories.items.length) {
-                state.stories.items = [{
+                state.stories.items = [normalizeStoryItem({
                     id: 'instajoy-default',
                     username: 'instaJOY',
                     avatar: DEFAULT_AVATAR,
                     thumb: DEFAULT_AVATAR,
-                    video: 'instaJOY (1) (1).mp4',
+                    mediaUrl: 'instaJOY (1) (1).mp4',
+                    mediaType: 'video',
                     timestamp: new Date(),
-                }];
+                })];
             }
             state.stories.lastRefreshed = Date.now();
             state.stories.loading = false;
@@ -1254,32 +1267,92 @@
 
     function openStoryViewer(index) {
         const stories = state.stories.items || [];
-        const story = stories[index];
-        if (!story || !dom.storyModal || !dom.storyVideo) return;
+        const story = normalizeStoryItem(stories[index]);
+        if (!story || !dom.storyModal) return;
 
+        clearStoryViewerPlayback();
         state.storyViewer.activeIndex = index;
         state.storyViewer.isOpen = true;
         dom.storyModal.hidden = false;
+        dom.storyModal.classList.remove('hidden');
         dom.storyModal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
         dom.storyProgress.innerHTML = stories.map((_, barIndex) => `
-            <span class="story-progress-bar ${barIndex === index ? 'active' : ''}" style="--progress:${barIndex === index ? 1 : 0}"></span>
+            <span
+                class="story-progress-bar ${barIndex === index ? 'active' : ''}"
+                data-story-progress-index="${barIndex}"
+                style="--progress:${barIndex < index ? '100%' : '0%'}; --story-progress-duration:0ms;"
+            ></span>
         `).join('');
         dom.storyMetaAvatar.src = getAvatar(story.avatar);
         dom.storyMetaAvatar.alt = escapeHtml(story.username || 'Story user');
         dom.storyMetaUser.textContent = story.username || 'instaJOY';
         dom.storyMetaTime.textContent = formatShortDate(story.timestamp || new Date());
-        dom.storyVideo.src = story.video || '';
-        dom.storyVideo.poster = story.thumb || DEFAULT_AVATAR;
-        dom.storyVideo.currentTime = 0;
-        dom.storyVideo.play().catch(() => {});
+        const mediaUrl = getStoryMediaUrl(story);
+        const mediaType = story.mediaType || getStoryMediaPresentation(mediaUrl);
+
+        if (dom.storyImage) {
+            dom.storyImage.hidden = mediaType !== 'image';
+            dom.storyImage.src = mediaType === 'image' ? (mediaUrl || story.thumb || DEFAULT_AVATAR) : '';
+            dom.storyImage.alt = escapeHtml(story.username || 'Story image');
+        }
+
+        if (dom.storyVideo) {
+            dom.storyVideo.onloadedmetadata = null;
+            dom.storyVideo.ontimeupdate = null;
+            dom.storyVideo.onended = null;
+            if (mediaType === 'video') {
+                dom.storyVideo.hidden = false;
+                dom.storyVideo.src = mediaUrl || '';
+                dom.storyVideo.poster = story.thumb || DEFAULT_AVATAR;
+                dom.storyVideo.currentTime = 0;
+                dom.storyVideo.onloadedmetadata = () => {
+                    updateStoryProgress(0);
+                };
+                dom.storyVideo.ontimeupdate = () => {
+                    const duration = Number(dom.storyVideo.duration || 0);
+                    if (!duration) return;
+                    updateStoryProgress((dom.storyVideo.currentTime / duration) * 100);
+                };
+                dom.storyVideo.onended = () => {
+                    updateStoryProgress(100);
+                    switchStory(1);
+                };
+                dom.storyVideo.play().catch(() => {});
+            } else {
+                dom.storyVideo.pause();
+                dom.storyVideo.removeAttribute('src');
+                dom.storyVideo.load();
+                dom.storyVideo.hidden = true;
+            }
+        }
+
+        if (mediaType !== 'video') {
+            startImageStoryAdvance();
+        }
     }
 
     function closeStoryViewer() {
-        if (!dom.storyModal || !dom.storyVideo) return;
+        if (!dom.storyModal) return;
+        clearStoryViewerPlayback();
         state.storyViewer.isOpen = false;
         dom.storyModal.hidden = true;
+        dom.storyModal.classList.add('hidden');
         dom.storyModal.setAttribute('aria-hidden', 'true');
-        dom.storyVideo.pause();
+        document.body.style.overflow = '';
+        if (dom.storyVideo) {
+            dom.storyVideo.onloadedmetadata = null;
+            dom.storyVideo.ontimeupdate = null;
+            dom.storyVideo.onended = null;
+            dom.storyVideo.pause();
+            dom.storyVideo.removeAttribute('src');
+            dom.storyVideo.load();
+            dom.storyVideo.hidden = true;
+        }
+        if (dom.storyImage) {
+            dom.storyImage.hidden = true;
+            dom.storyImage.removeAttribute('src');
+        }
     }
 
     function switchStory(delta) {
@@ -1289,6 +1362,326 @@
         if (nextIndex < 0) nextIndex = stories.length - 1;
         if (nextIndex >= stories.length) nextIndex = 0;
         openStoryViewer(nextIndex);
+    }
+
+    function clearStoryViewerPlayback() {
+        if (state.storyViewer.advanceTimer) {
+            window.clearTimeout(state.storyViewer.advanceTimer);
+            state.storyViewer.advanceTimer = null;
+        }
+    }
+
+    function getStoryMediaUrl(story) {
+        return String(
+            story?.mediaUrl
+            || story?.media_url
+            || story?.video
+            || story?.image
+            || story?.thumb
+            || ''
+        );
+    }
+
+    function normalizeStoryItem(story) {
+        if (!story) {
+            return null;
+        }
+
+        const mediaUrl = getStoryMediaUrl(story);
+        const avatar = story.avatar || story.avatar_url || story.profileImage || story.thumb || DEFAULT_AVATAR;
+        return {
+            ...story,
+            username: story.username || story.user?.username || story.profile?.username || 'instaJOY',
+            avatar,
+            thumb: story.thumb || avatar,
+            mediaUrl,
+            video: story.video || mediaUrl,
+            mediaType: story.mediaType || story.type || getStoryMediaPresentation(mediaUrl),
+            timestamp: story.timestamp || story.created_at || story.createdAt || new Date(),
+        };
+    }
+
+    function updateStoryProgress(progressPercent, durationMs = 0) {
+        if (!dom.storyProgress) return;
+        const activeBar = dom.storyProgress.querySelector(`[data-story-progress-index="${state.storyViewer.activeIndex}"]`);
+        if (!activeBar) return;
+        activeBar.style.setProperty('--story-progress-duration', `${Math.max(0, Number(durationMs) || 0)}ms`);
+        activeBar.style.setProperty('--progress', `${Math.max(0, Math.min(100, progressPercent || 0))}%`);
+    }
+
+    function startImageStoryAdvance(durationMs = 5000) {
+        clearStoryViewerPlayback();
+        updateStoryProgress(0, 0);
+        window.requestAnimationFrame(() => {
+            updateStoryProgress(100, durationMs);
+        });
+        state.storyViewer.advanceTimer = window.setTimeout(() => {
+            if (state.storyViewer.isOpen) {
+                switchStory(1);
+            }
+        }, durationMs);
+    }
+
+    function handleGlobalKeydown(event) {
+        if (!state.storyViewer.isOpen) return;
+        if (event.key === 'Escape') {
+            closeStoryViewer();
+            return;
+        }
+        if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            switchStory(-1);
+            return;
+        }
+        if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            switchStory(1);
+        }
+    }
+
+    function ensureEphemeralFileInput(id, accept) {
+        let input = document.getElementById(id);
+        if (input) {
+            input.value = '';
+            return input;
+        }
+
+        input = document.createElement('input');
+        input.id = id;
+        input.type = 'file';
+        input.hidden = true;
+        input.accept = accept;
+        document.body.appendChild(input);
+        return input;
+    }
+
+    function dataUrlToBlob(dataUrl, fallbackMimeType) {
+        const [header, base64 = ''] = String(dataUrl || '').split(',');
+        const mimeMatch = header.match(/data:([^;]+);base64/i);
+        const mimeType = mimeMatch?.[1] || fallbackMimeType || 'application/octet-stream';
+        const bytes = atob(base64);
+        const array = new Uint8Array(bytes.length);
+
+        for (let index = 0; index < bytes.length; index += 1) {
+            array[index] = bytes.charCodeAt(index);
+        }
+
+        return new Blob([array], { type: mimeType });
+    }
+
+    function getStoryMediaPresentation(url) {
+        const value = String(url || '').toLowerCase();
+        if (!value) {
+            return 'note';
+        }
+        if (value.startsWith('data:video/') || /\.(mp4|webm|ogg)(\?|#|$)/i.test(value)) {
+            return 'video';
+        }
+        return 'image';
+    }
+
+    async function publishStoryFromFile(file) {
+        const user = requireAuthenticatedUserRecord();
+        const client = getSupabaseClientOrThrow();
+        const isImage = /^image\/(png|jpeg|jpg|webp)$/i.test(file.type);
+        const isVideo = /^video\/(mp4|webm|ogg)$/i.test(file.type);
+
+        if (!isImage && !isVideo) {
+            throw new Error('Stories support images and MP4/WebM/OGG videos.');
+        }
+
+        let uploadBody = file;
+        let extension = isImage ? 'jpg' : (file.type.split('/')[1] || 'mp4');
+        let contentType = file.type || (isImage ? 'image/jpeg' : 'video/mp4');
+        const storyType = isVideo ? 'video' : 'image';
+
+        if (isImage) {
+            const compressed = await compressImageFile(file, 350 * 1024, 1440);
+            uploadBody = dataUrlToBlob(compressed.dataUri, 'image/jpeg');
+            extension = 'jpg';
+            contentType = 'image/jpeg';
+        } else {
+            if (file.size > MAX_REEL_BYTES) {
+                throw new Error('Story videos must be 1MB or smaller.');
+            }
+
+            const metadata = await readVideoMetadata(file);
+            if (metadata.objectUrl) {
+                URL.revokeObjectURL(metadata.objectUrl);
+            }
+            if (metadata.duration > MAX_REEL_DURATION) {
+                throw new Error('Story videos must be 30 seconds or less.');
+            }
+        }
+
+        const path = `${user.id}/stories/${Date.now()}.${extension}`;
+        const { error: uploadError } = await client.storage
+            .from('story-chain')
+            .upload(path, uploadBody, {
+                upsert: true,
+                contentType,
+            });
+
+        if (uploadError) {
+            throw uploadError;
+        }
+
+        const { data: publicData } = client.storage.from('story-chain').getPublicUrl(path);
+        const mediaUrl = publicData?.publicUrl;
+        if (!mediaUrl) {
+            throw new Error('Could not publish story media.');
+        }
+
+        const { error: insertError } = await client.from('stories').insert({
+            user_id: user.id,
+            media_url: mediaUrl,
+            type: storyType,
+        });
+
+        if (insertError) {
+            throw insertError;
+        }
+    }
+
+    async function triggerStoryPublisher() {
+        if (!requireLogin('publishing stories')) return;
+
+        const input = ensureEphemeralFileInput('storyPublishInput', 'image/*,video/mp4,video/webm,video/ogg');
+        input.onchange = async () => {
+            const file = input.files && input.files[0];
+            if (!file) {
+                return;
+            }
+
+            try {
+                await publishStoryFromFile(file);
+                await fetchStories(true);
+                showToast('Story published.', 'success');
+            } catch (error) {
+                showToast(error.message || 'Could not publish story', 'error');
+            } finally {
+                input.value = '';
+            }
+        };
+        input.click();
+    }
+
+    function ensureStoryChainModal() {
+        let modal = document.getElementById('storyChainModal');
+        if (modal) {
+            return modal;
+        }
+
+        modal = document.createElement('div');
+        modal.id = 'storyChainModal';
+        modal.className = 'modal-overlay';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 560px;">
+                <div class="modal-header">
+                    <div>
+                        <h2 id="storyChainTitle" style="margin: 0;">Story Chain</h2>
+                        <p id="storyChainMeta" class="microcopy" style="margin: 6px 0 0;"></p>
+                    </div>
+                    <button type="button" class="modal-close" data-close-modal="storyChainModal" aria-label="Close story chain">×</button>
+                </div>
+                <div id="storyChainParticipants" class="stack-list compact-list" style="padding-bottom: 12px;"></div>
+                <div id="storyChainSegments" class="stack-list compact-list"></div>
+            </div>
+        `;
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal(modal);
+            }
+        });
+        document.body.appendChild(modal);
+        return modal;
+    }
+
+    function renderStoryChainViewer(chain) {
+        const modal = ensureStoryChainModal();
+        const title = modal.querySelector('#storyChainTitle');
+        const meta = modal.querySelector('#storyChainMeta');
+        const participants = modal.querySelector('#storyChainParticipants');
+        const segments = modal.querySelector('#storyChainSegments');
+        const chainModeLabel = chain.mode === 'public' ? 'Open join' : 'Followers join';
+
+        title.textContent = chain.title || 'Story Chain';
+        meta.textContent = `${chain.segmentCount || chain.segments.length} segments • ${chainModeLabel} • started ${formatShortDate(chain.createdAt)}`;
+        participants.innerHTML = `
+            <div class="card compact-card">
+                <strong>Participants</strong>
+                <div class="meta-line" style="margin-top: 8px;">
+                    ${(chain.participants || []).map((participant) => escapeHtml(participant.username)).join(' • ') || 'Just you for now'}
+                </div>
+            </div>
+        `;
+
+        segments.innerHTML = (chain.segments || []).map((segment, index) => {
+            const mediaKind = getStoryMediaPresentation(segment.mediaUrl);
+            return `
+                <article class="card compact-card">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+                        <img class="avatar small" src="${getAvatar(segment.avatar)}" alt="${escapeHtml(segment.username || 'member')}" onerror="this.src='ilogo.png'">
+                        <div>
+                            <strong>${escapeHtml(segment.username || 'member')}</strong>
+                            <div class="meta-line">Part ${index + 1} • ${formatDateTime(segment.createdAt)}</div>
+                        </div>
+                    </div>
+                    ${segment.caption ? `<p class="post-text">${escapeHtml(segment.caption)}</p>` : '<p class="meta-line">Shared a new chapter.</p>'}
+                    ${mediaKind === 'image' ? `<img class="preview-image" src="${segment.mediaUrl}" alt="${escapeHtml(segment.caption || 'Story chain image')}">` : ''}
+                    ${mediaKind === 'video' ? `<video class="preview-video" src="${segment.mediaUrl}" controls playsinline preload="metadata"></video>` : ''}
+                </article>
+            `;
+        }).join('') || `
+            <div class="empty-state">
+                <p>No segments yet. Invite collaborators to keep the story moving.</p>
+            </div>
+        `;
+
+        openModal(modal);
+    }
+
+    async function openStoryChain(chainId) {
+        try {
+            const response = await apiRequest(`/story-chains/${chainId}`, { auth: false });
+            renderStoryChainViewer(response.chain);
+        } catch (error) {
+            showToast(error.message || 'Could not open story chain', 'error');
+        }
+    }
+
+    async function createStoryChain() {
+        if (!requireLogin('creating story chains')) return;
+
+        const titleInput = window.prompt('Name your collaborative story chain:', 'Joy chain');
+        if (titleInput === null) {
+            return;
+        }
+
+        const title = titleInput.trim().slice(0, 80) || 'Joy chain';
+        const openerInput = window.prompt('Add an opening note for the first segment (optional):', '');
+        if (openerInput === null) {
+            return;
+        }
+
+        const allowPublic = window.confirm('Allow anyone to join this story chain?\nChoose Cancel for followers only.');
+
+        try {
+            await apiRequest('/story-chains', {
+                method: 'POST',
+                body: {
+                    title,
+                    opener: openerInput.trim(),
+                    privacy: allowPublic ? 'public' : 'friends',
+                    allowPublic,
+                },
+            });
+            await fetchStories(true);
+            showToast('Story chain created.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not create story chain', 'error');
+        }
     }
 
     async function loadReels(reset) {
@@ -1388,7 +1781,12 @@
         const conversations = state.messages.conversations;
 
         if (!conversations.length) {
-            dom.conversationList.innerHTML = `<div class="empty-state">No conversations yet. Start one from Search or Profile.</div>`;
+            dom.conversationList.innerHTML = `
+                <div class="empty-state">
+                    <p>No conversations yet. Start one from Search or any profile.</p>
+                    <button class="ghost-button compact" type="button" data-view="search">Find people</button>
+                </div>
+            `;
             return;
         }
 
@@ -2380,6 +2778,21 @@
             return;
         }
 
+        if (action === 'publish-story') {
+            await triggerStoryPublisher();
+            return;
+        }
+
+        if (action === 'create-story-chain') {
+            await createStoryChain();
+            return;
+        }
+
+        if (action === 'open-story-chain') {
+            await openStoryChain(target.dataset.chainId);
+            return;
+        }
+
         if (action === 'story-prev') {
             switchStory(-1);
             return;
@@ -2670,9 +3083,25 @@
     function renderStories() {
         if (!dom.storiesShell) return;
         const staticItems = [
-            { label: 'Your story', icon: '+', className: 'story-create' },
-            { label: '+ Create chain', icon: '🔗', className: 'story-link' },
+            { label: 'Your story', icon: '+', className: 'story-create', action: 'publish-story' },
+            { label: '+ Create chain', icon: '🔗', className: 'story-link', action: 'create-story-chain' },
         ];
+
+        const chainItems = (state.stories.chainItems || []).map((chain) => `
+            <div class="story-item">
+                <button
+                    class="story-card story-ring"
+                    type="button"
+                    data-action="open-story-chain"
+                    data-chain-id="${chain.id}"
+                    aria-label="Open story chain ${escapeHtml(chain.title || 'Story chain')}"
+                    title="${escapeHtml(chain.title || 'Story chain')}"
+                >
+                    <img class="story-avatar" src="${getAvatar(chain.creator?.profileImage || chain.creator?.avatar)}" alt="${escapeHtml(chain.creator?.username || 'Chain creator')}" onerror="this.src='ilogo.png'">
+                </button>
+                <div class="story-label">${escapeHtml(truncateText(chain.title || 'Story chain', 18))}</div>
+            </div>
+        `).join('');
 
         const dynamicItems = (state.stories.items || []).map((story, index) => `
             <div class="story-item">
@@ -2685,12 +3114,12 @@
 
         dom.storiesShell.innerHTML = staticItems.map((item) => `
             <div class="story-item">
-                <button class="story-card story-action ${item.className || ''}" type="button" aria-label="${item.label}">
+                <button class="story-card story-action ${item.className || ''}" type="button" data-action="${item.action}" aria-label="${item.label}">
                     <span class="story-icon">${item.icon}</span>
                 </button>
                 <div class="story-label">${item.label}</div>
             </div>
-        `).join('') + dynamicItems;
+        `).join('') + chainItems + dynamicItems;
     }
 
     function renderMoodChips() {
@@ -2967,9 +3396,9 @@
         const likedIds = interactionState?.likedIds || new Set();
         const reactionMap = interactionState?.reactionMap || {};
         const text = post?.content || post?.caption || '';
-        const likeCount = Number(post?.likes?.[0]?.count || 0);
-        const commentCount = Number(post?.comments?.[0]?.count || 0);
-        const profile = post?.profiles || {};
+        const likeCount = Number(post?.likeCount ?? post?.likes?.[0]?.count ?? 0);
+        const commentCount = Number(post?.commentCount ?? post?.comments?.[0]?.count ?? 0);
+        const profile = post?.profile || post?.profiles || {};
 
         return {
             id: post.id,
@@ -2992,10 +3421,203 @@
             author: {
                 id: profile.id || post.user_id,
                 username: profile.username || 'member',
+                displayName: profile.display_name || profile.username || 'member',
                 profileImage: profile.avatar_url || DEFAULT_AVATAR,
                 avatar: profile.avatar_url || DEFAULT_AVATAR,
             },
         };
+    }
+
+    async function fetchProfilesByIds(userIds, columns = 'id, username, display_name, bio, avatar_url') {
+        const uniqueIds = [...new Set((userIds || []).filter(Boolean))];
+        if (!uniqueIds.length) {
+            return new Map();
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('profiles')
+            .select(columns)
+            .in('id', uniqueIds);
+
+        if (error) {
+            throw error;
+        }
+
+        return new Map((data || []).map((profile) => [profile.id, profile]));
+    }
+
+    function buildCountMap(rows, key) {
+        const map = new Map();
+        (rows || []).forEach((row) => {
+            const id = row?.[key];
+            if (!id) {
+                return;
+            }
+            map.set(id, (map.get(id) || 0) + 1);
+        });
+        return map;
+    }
+
+    async function fetchGroupedCountMap(tableName, foreignKey, ids) {
+        const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+        if (!uniqueIds.length) {
+            return new Map();
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from(tableName)
+            .select(foreignKey)
+            .in(foreignKey, uniqueIds);
+
+        if (error) {
+            throw error;
+        }
+
+        return buildCountMap(data, foreignKey);
+    }
+
+    async function hydratePosts(rows) {
+        const items = Array.isArray(rows) ? rows : [];
+        if (!items.length) {
+            return [];
+        }
+
+        const [interactionState, profileMap, likeCountMap, commentCountMap] = await Promise.all([
+            fetchPostInteractionState(items.map((row) => row.id)),
+            fetchProfilesByIds(items.map((row) => row.user_id)),
+            fetchGroupedCountMap('likes', 'post_id', items.map((row) => row.id)),
+            fetchGroupedCountMap('comments', 'post_id', items.map((row) => row.id)),
+        ]);
+
+        return items.map((row) => normalizeSupabasePostRow({
+            ...row,
+            profile: profileMap.get(row.user_id) || null,
+            likeCount: likeCountMap.get(row.id) || 0,
+            commentCount: commentCountMap.get(row.id) || 0,
+        }, interactionState));
+    }
+
+    async function hydrateSinglePost(row) {
+        const [post] = await hydratePosts(row ? [row] : []);
+        return post || null;
+    }
+
+    async function fetchStoriesFromSupabase(limit) {
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('stories')
+            .select('id, user_id, media_url, type, created_at, expires_at')
+            .gt('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (error) {
+            throw error;
+        }
+
+        const profileMap = await fetchProfilesByIds((data || []).map((story) => story.user_id), 'id, username, avatar_url');
+        return (data || []).map((story) => {
+            const profile = profileMap.get(story.user_id);
+            return normalizeStoryItem({
+                id: story.id,
+                username: profile?.username || 'instaJOY',
+                avatar: profile?.avatar_url || DEFAULT_AVATAR,
+                thumb: profile?.avatar_url || DEFAULT_AVATAR,
+                mediaUrl: story.media_url,
+                mediaType: story.type || getStoryMediaPresentation(story.media_url),
+                timestamp: story.created_at,
+            });
+        });
+    }
+
+    async function fetchStoryChainPreviews(limit) {
+        const client = getSupabaseClientOrThrow();
+        const { data: chains, error } = await client
+            .from('story_chains')
+            .select('id, creator_id, title, privacy, allow_public, created_at, status')
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (error) {
+            throw error;
+        }
+
+        const chainIds = (chains || []).map((chain) => chain.id);
+        const { data: segments, error: segmentsError } = chainIds.length
+            ? await client
+                .from('story_chain_segments')
+                .select('id, chain_id, user_id, media_url, caption, segment_order, created_at')
+                .in('chain_id', chainIds)
+                .order('segment_order', { ascending: true })
+            : { data: [], error: null };
+
+        if (segmentsError) {
+            throw segmentsError;
+        }
+
+        const profileIds = new Set();
+        (chains || []).forEach((chain) => profileIds.add(chain.creator_id));
+        (segments || []).forEach((segment) => profileIds.add(segment.user_id));
+        const profileMap = await fetchProfilesByIds([...profileIds], 'id, username, avatar_url');
+
+        const segmentsByChainId = new Map();
+        (segments || []).forEach((segment) => {
+            if (!segmentsByChainId.has(segment.chain_id)) {
+                segmentsByChainId.set(segment.chain_id, []);
+            }
+            segmentsByChainId.get(segment.chain_id).push(segment);
+        });
+
+        return (chains || []).map((chain) => {
+            const creator = profileMap.get(chain.creator_id);
+            const chainSegments = segmentsByChainId.get(chain.id) || [];
+            const participants = [...new Map(chainSegments.map((segment) => {
+                const profile = profileMap.get(segment.user_id);
+                return [segment.user_id, {
+                    id: segment.user_id,
+                    username: profile?.username || 'member',
+                    avatar: profile?.avatar_url || DEFAULT_AVATAR,
+                }];
+            })).values()];
+
+            return {
+                id: chain.id,
+                title: chain.title || 'Story chain',
+                createdAt: chain.created_at,
+                mode: chain.allow_public || chain.privacy === 'public' ? 'public' : 'invite',
+                segmentCount: chainSegments.length,
+                creator: {
+                    id: chain.creator_id,
+                    username: creator?.username || 'member',
+                    profileImage: creator?.avatar_url || DEFAULT_AVATAR,
+                    avatar: creator?.avatar_url || DEFAULT_AVATAR,
+                },
+                participants,
+                segments: chainSegments.map((segment) => {
+                    const profile = profileMap.get(segment.user_id);
+                    return {
+                        id: segment.id,
+                        username: profile?.username || 'member',
+                        avatar: profile?.avatar_url || DEFAULT_AVATAR,
+                        caption: segment.caption || '',
+                        mediaUrl: segment.media_url || '',
+                        createdAt: segment.created_at,
+                    };
+                }),
+            };
+        });
+    }
+
+    async function fetchStoryChainDetail(chainId) {
+        const chains = await fetchStoryChainPreviews(20);
+        const chain = chains.find((item) => item.id === chainId);
+        if (!chain) {
+            throw new Error('Story chain not found.');
+        }
+        return chain;
     }
 
     async function fetchFeedPosts(options = {}) {
@@ -3003,20 +3625,7 @@
         const limit = Number(options.limit || 8);
         let query = client
             .from('posts')
-            .select(`
-                id,
-                user_id,
-                type,
-                category,
-                caption,
-                content,
-                image_url,
-                media_url,
-                created_at,
-                profiles (id, username, avatar_url),
-                likes:likes(count),
-                comments:comments(count)
-            `)
+            .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
             .order('created_at', { ascending: false })
             .limit(limit + 1);
 
@@ -3039,8 +3648,7 @@
             rows = rows.slice(0, limit);
         }
 
-        const interactionState = await fetchPostInteractionState(rows.map((row) => row.id));
-        let posts = rows.map((row) => normalizeSupabasePostRow(row, interactionState));
+        let posts = await hydratePosts(rows);
 
         if (options.mood && options.mood !== 'mixed') {
             posts = filterFeedPosts(posts, options.mood);
@@ -3112,20 +3720,7 @@
         const client = getSupabaseClientOrThrow();
         const { data, error } = await client
             .from('posts')
-            .select(`
-                id,
-                user_id,
-                type,
-                category,
-                caption,
-                content,
-                image_url,
-                media_url,
-                created_at,
-                profiles (id, username, avatar_url),
-                likes:likes(count),
-                comments:comments(count)
-            `)
+            .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
             .eq('user_id', profile.id)
             .order('created_at', { ascending: false });
 
@@ -3133,8 +3728,7 @@
             throw error;
         }
 
-        const interactionState = await fetchPostInteractionState((data || []).map((row) => row.id));
-        return (data || []).map((row) => normalizeSupabasePostRow(row, interactionState));
+        return hydratePosts(data || []);
     }
 
     async function fetchConversationList() {
@@ -3238,7 +3832,7 @@
         const client = getSupabaseClientOrThrow();
         const { data, error } = await client
             .from('comments')
-            .select('id, body, created_at, user_id, profiles (id, username, avatar_url)')
+            .select('id, body, created_at, user_id')
             .eq('post_id', postId)
             .order('created_at', { ascending: true });
 
@@ -3246,14 +3840,15 @@
             throw error;
         }
 
+        const profileMap = await fetchProfilesByIds((data || []).map((comment) => comment.user_id), 'id, username, avatar_url');
         return (data || []).map((comment) => ({
             id: comment.id,
             text: comment.body,
             createdAt: comment.created_at,
             author: {
-                id: comment.profiles?.id || comment.user_id,
-                username: comment.profiles?.username || 'member',
-                profileImage: comment.profiles?.avatar_url || DEFAULT_AVATAR,
+                id: comment.user_id,
+                username: profileMap.get(comment.user_id)?.username || 'member',
+                profileImage: profileMap.get(comment.user_id)?.avatar_url || DEFAULT_AVATAR,
             },
         }));
     }
@@ -3350,24 +3945,86 @@
 
         if (pathname === '/stories' && method === 'GET') {
             const limit = Number(requestUrl.searchParams.get('limit') || 10);
-            const { data, error } = await client
-                .from('stories')
-                    .select('id, media_url, type, created_at, profiles (username, avatar_url)')
-                .limit(limit);
+            return {
+                stories: await fetchStoriesFromSupabase(limit),
+            };
+        }
+
+        if (pathname === '/stories' && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const mediaUrl = String(settings.body?.mediaUrl || '').trim();
+            const storyType = settings.body?.type === 'video' ? 'video' : 'image';
+
+            if (!mediaUrl) {
+                throw new Error('Story media is required.');
+            }
+
+            const { error } = await client.from('stories').insert({
+                user_id: user.id,
+                media_url: mediaUrl,
+                type: storyType,
+            });
 
             if (error) {
                 throw error;
             }
 
+            return { success: true };
+        }
+
+        if (pathname === '/story-chains' && method === 'GET') {
+            const limit = Number(requestUrl.searchParams.get('limit') || 6);
             return {
-                stories: (data || []).map((story) => ({
-                    id: story.id,
-                    username: story.profiles?.username || 'instaJOY',
-                    avatar: story.profiles?.avatar_url || DEFAULT_AVATAR,
-                    thumb: story.profiles?.avatar_url || DEFAULT_AVATAR,
-                    video: story.media_url,
-                    timestamp: story.created_at,
-                })),
+                chains: await fetchStoryChainPreviews(limit),
+            };
+        }
+
+        if (pathname === '/story-chains' && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const title = String(settings.body?.title || '').trim().slice(0, 80) || 'Story chain';
+            const opener = String(settings.body?.opener || '').trim().slice(0, 280);
+            const privacy = settings.body?.privacy === 'public' ? 'public' : 'friends';
+            const allowPublic = Boolean(settings.body?.allowPublic) || privacy === 'public';
+
+            const { data: chain, error: chainError } = await client
+                .from('story_chains')
+                .insert({
+                    creator_id: user.id,
+                    title,
+                    privacy,
+                    allow_public: allowPublic,
+                })
+                .select('id')
+                .single();
+
+            if (chainError) {
+                throw chainError;
+            }
+
+            if (opener) {
+                const { error: segmentError } = await client
+                    .from('story_chain_segments')
+                    .insert({
+                        chain_id: chain.id,
+                        user_id: user.id,
+                        caption: opener,
+                        segment_order: 1,
+                    });
+
+                if (segmentError) {
+                    throw segmentError;
+                }
+            }
+
+            return {
+                chain: await fetchStoryChainDetail(chain.id),
+            };
+        }
+
+        const storyChainMatch = pathname.match(/^\/story-chains\/([^/]+)$/);
+        if (storyChainMatch && method === 'GET') {
+            return {
+                chain: await fetchStoryChainDetail(storyChainMatch[1]),
             };
         }
 
@@ -3564,20 +4221,7 @@
                 client.from('profiles').select('id, username, bio, avatar_url').ilike('username', `%${query}%`).limit(12),
                 client
                     .from('posts')
-                    .select(`
-                        id,
-                        user_id,
-                        type,
-                        category,
-                        caption,
-                        content,
-                        image_url,
-                        media_url,
-                        created_at,
-                        profiles (id, username, avatar_url),
-                        likes:likes(count),
-                        comments:comments(count)
-                    `)
+                    .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                     .or(`caption.ilike.%${query}%,content.ilike.%${query}%`)
                     .order('created_at', { ascending: false })
                     .limit(12),
@@ -3592,7 +4236,6 @@
             }
 
             const posts = postsResult.data || [];
-            const interactionState = await fetchPostInteractionState(posts.map((row) => row.id));
 
             return {
                 users: (profilesResult.data || []).map((profile) => ({
@@ -3601,7 +4244,7 @@
                     bio: profile.bio || '',
                     profileImage: profile.avatar_url || DEFAULT_AVATAR,
                 })),
-                posts: posts.map((row) => normalizeSupabasePostRow(row, interactionState)),
+                posts: await hydratePosts(posts),
             };
         }
 
@@ -3621,27 +4264,14 @@
             const { data, error } = await client
                 .from('posts')
                 .insert(payload)
-                .select(`
-                    id,
-                    user_id,
-                    type,
-                    category,
-                    caption,
-                    content,
-                    image_url,
-                    media_url,
-                    created_at,
-                    profiles (id, username, avatar_url),
-                    likes:likes(count),
-                    comments:comments(count)
-                `)
+                .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                 .single();
 
             if (error) {
                 throw error;
             }
 
-            return { post: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+            return { post: await hydrateSinglePost(data) };
         }
 
         if (pathname === '/reels' && method === 'POST') {
@@ -3655,27 +4285,14 @@
                     content: String(settings.body?.caption || '').trim() || null,
                     media_url: settings.body?.videoData || null,
                 })
-                .select(`
-                    id,
-                    user_id,
-                    type,
-                    category,
-                    caption,
-                    content,
-                    image_url,
-                    media_url,
-                    created_at,
-                    profiles (id, username, avatar_url),
-                    likes:likes(count),
-                    comments:comments(count)
-                `)
+                .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                 .single();
 
             if (error) {
                 throw error;
             }
 
-            return { reel: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+            return { reel: await hydrateSinglePost(data) };
         }
 
         const postCommentsMatch = pathname.match(/^\/(posts|reels)\/([^/]+)\/comments$/);
@@ -3800,20 +4417,7 @@
 
             const { data, error } = await client
                 .from('posts')
-                .select(`
-                    id,
-                    user_id,
-                    type,
-                    category,
-                    caption,
-                    content,
-                    image_url,
-                    media_url,
-                    created_at,
-                    profiles (id, username, avatar_url),
-                    likes:likes(count),
-                    comments:comments(count)
-                `)
+                .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                 .eq('id', postMatch[1])
                 .single();
 
@@ -3821,7 +4425,7 @@
                 throw error;
             }
 
-            return { post: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+            return { post: await hydrateSinglePost(data) };
         }
 
         if (postMatch && method === 'DELETE') {

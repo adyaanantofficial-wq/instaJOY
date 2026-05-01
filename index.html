@@ -600,7 +600,7 @@
             z-index: 250;
             display: grid;
             place-items: center;
-            padding: 18px;
+            padding: clamp(10px, 2vw, 18px);
             background: rgba(12, 25, 49, 0.58);
         }
 
@@ -618,12 +618,15 @@
             position: relative;
             width: min(840px, 100%);
             max-width: 840px;
+            max-height: calc(100dvh - 36px);
             border-radius: 26px;
             overflow: hidden;
             background: rgba(255, 255, 255, 0.96);
             box-shadow: 0 32px 80px rgba(7, 24, 55, 0.2);
             backdrop-filter: blur(18px);
             z-index: 1;
+            display: flex;
+            flex-direction: column;
         }
 
         .story-modal-header {
@@ -692,25 +695,28 @@
             inset: 0;
             width: var(--progress, 0%);
             background: linear-gradient(90deg, #fb7185 0%, #f97316 100%);
-            transition: width 0.25s ease;
+            transition: width var(--story-progress-duration, 0ms) linear;
         }
 
         .story-progress-bar.active::after {
-            width: 100%;
+            box-shadow: 0 0 16px rgba(251, 113, 133, 0.38);
         }
 
         .story-media-shell {
             width: 100%;
             background: #000;
-            aspect-ratio: 4 / 5;
-            min-height: 520px;
+            aspect-ratio: 9 / 16;
+            min-height: min(72vh, 720px);
             overflow: hidden;
+            display: grid;
+            place-items: center;
         }
 
         .story-video {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            display: block;
+            object-fit: contain;
             background: #000;
         }
 
@@ -719,6 +725,7 @@
             justify-content: space-between;
             gap: 14px;
             padding: 18px 20px 24px;
+            background: rgba(255, 255, 255, 0.94);
         }
 
         .story-control-button {
@@ -736,6 +743,45 @@
         .story-control-button:hover {
             transform: translateY(-1px);
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        }
+
+        @media (max-width: 640px) {
+            .story-modal {
+                padding: 0;
+            }
+
+            .story-modal-card {
+                width: 100%;
+                max-width: none;
+                max-height: 100dvh;
+                min-height: 100dvh;
+                border-radius: 0;
+            }
+
+            .story-modal-header {
+                padding: 14px 14px 12px;
+            }
+
+            .story-progress {
+                gap: 6px;
+                padding: 0 14px 14px;
+            }
+
+            .story-media-shell {
+                aspect-ratio: auto;
+                min-height: 0;
+                flex: 1;
+            }
+
+            .story-controls {
+                gap: 10px;
+                padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+            }
+
+            .story-control-button {
+                min-height: 46px;
+                border-radius: 14px;
+            }
         }
 
         /* Feed Stack */
@@ -1328,19 +1374,31 @@
         }
 
         .stories-shell {
+            display: flex;
             gap: 26px;
             padding: 0 12px 18px;
             align-items: flex-start;
+            overflow-x: auto;
+            overscroll-behavior-x: contain;
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
+            scroll-snap-type: x proximity;
+            scroll-padding-inline: 12px;
+            scrollbar-width: thin;
+            touch-action: pan-x;
         }
 
         .story-item {
+            flex: 0 0 auto;
             min-width: 138px;
+            scroll-snap-align: start;
         }
 
         .story-card {
             width: 136px;
             height: 136px;
             box-shadow: 0 18px 38px rgba(57, 100, 150, 0.12);
+            flex-shrink: 0;
         }
 
         .story-card.story-ring {
@@ -1371,6 +1429,9 @@
             font-size: 15px;
             font-weight: 500;
             color: #15324d;
+            line-height: 1.3;
+            white-space: normal;
+            word-break: break-word;
         }
 
         .mood-row {
@@ -1468,7 +1529,8 @@
 
             .stories-shell {
                 gap: 18px;
-                padding: 0 4px 14px;
+                padding: 0 2px 14px;
+                scroll-padding-inline: 2px;
             }
 
             .story-item {
@@ -1497,6 +1559,14 @@
             .story-label {
                 max-width: 112px;
                 font-size: 14px;
+            }
+
+            .story-modal-card {
+                max-height: calc(100dvh - 16px);
+            }
+
+            .story-media-shell {
+                min-height: min(68vh, 620px);
             }
 
             .home-mood-note {
@@ -2183,6 +2253,7 @@
                     </div>
                     <div id="storyProgress" class="story-progress"></div>
                     <div class="story-media-shell">
+                        <img id="storyImage" class="story-video" src="" alt="Story image" hidden>
                         <video id="storyVideo" class="story-video" muted playsinline controls preload="metadata"></video>
                     </div>
                     <div class="story-controls">
@@ -2228,10 +2299,7 @@
                                 <option value="">Select post type</option>
                                 <option value="jokes">😄 Jokes</option>
                                 <option value="ideas">💡 Ideas</option>
-                                <option value="knowledge">🎓 Knowledge</option>
-                                <option value="inspiration">✨ Inspiration</option>
-                                <option value="question">❓ Question</option>
-                                <option value="general">📌 General</option>
+                                <option value="fun-knowledge">🎓 Fun Knowledge</option>
                             </select>
 
                             <textarea id="postContent" class="form-input" placeholder="What's on your mind?" rows="6" maxlength="500"></textarea>
