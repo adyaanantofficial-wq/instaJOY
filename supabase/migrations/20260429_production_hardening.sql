@@ -338,7 +338,7 @@ create table if not exists public.notifications (
   read boolean not null default false,
   meta jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  constraint notifications_type_check check (type in ('like', 'comment', 'follow', 'message'))
+  constraint notifications_type_check check (type in ('like', 'comment', 'follow', 'message', 'chain_joined', 'chain_completed', 'capsule', 'capsule_unlocked', 'reaction_received'))
 );
 
 create index if not exists idx_notifications_user_created_at on public.notifications (user_id, created_at desc);

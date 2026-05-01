@@ -2069,8 +2069,15 @@
           user_id: state.user.id,
           reaction_type: reactionKey,
         }, { onConflict: 'post_id,user_id' });
-      if (error && (error.message || '').toLowerCase().includes('post_reactions_v2')) {
-        state.capabilitiesCache.postReactionsTable = 'missing';
+      if (error) {
+        if ((error.message || '').toLowerCase().includes('post_reactions_v2')) {
+          state.capabilitiesCache.postReactionsTable = 'missing';
+          showToast('Reaction feature is unavailable in this environment.', 'warning');
+        } else {
+          showToast(error.message || 'Could not save reaction.', 'error');
+        }
+        renderHomeFeed();
+        return;
       }
     }
 

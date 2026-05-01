@@ -514,6 +514,16 @@ button.primary-button::before {
     scroll-snap-type: x mandatory;
 }
 
+.stories-shell,
+.stories-strip {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 0.35rem;
+    margin-bottom: 1.2rem;
+    scroll-snap-type: x mandatory;
+}
+
 .story-card {
     display: flex;
     flex-direction: column;
@@ -664,6 +674,7 @@ button.primary-button::before {
     gap: 0.85rem;
 }
 
+.stories-shell,
 .stories-strip {
     display: flex;
     gap: 0.95rem;
