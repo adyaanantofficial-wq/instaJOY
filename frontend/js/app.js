@@ -118,6 +118,8 @@
                 if (dom.landingPage) dom.landingPage.hidden = true;
                 await hydrateSession();
                 await enterAuthedApp(true);
+            } else if (isRootPage) {
+                showAuthView();
             } else if (state.authState === 'guest') {
                 // Guest mode: skip auth, go directly to home feed
                 if (dom.landingPage) dom.landingPage.hidden = true;
@@ -131,8 +133,6 @@
                 state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
                 persistSession();
                 await enterAuthedApp(true);
-            } else if (isRootPage) {
-                showAuthView();
             } else {
                 if (dom.landingPage) dom.landingPage.hidden = false;
                 if (dom.appShell) dom.appShell.hidden = true;
