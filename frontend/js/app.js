@@ -86,17 +86,32 @@
 
     async function init() {
         cacheDom();
-        // Initialize auth mode: prefer session-scoped `INSTAJOY_AUTH_MODE`, fall back to legacy localStorage
-        const storedMode = sessionStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem('authMode');
-        const legacyGuest = (sessionStorage.getItem('guest') === 'true') || (localStorage.getItem('guest') === 'true');
-        if (storedMode === 'guest' || legacyGuest) {
-            state.authState = 'guest';
-        } else if (storedMode === 'user') {
-            state.authState = 'user';
-        } else if (state.session.token) {
-            state.authState = 'user';
+        
+        // Initialize Supabase Auth
+        if (window.SupabaseAuth) {
+            const authResult = await window.SupabaseAuth.init();
+            if (authResult.user) {
+                state.session.user = authResult.user;
+                if (window.SupabaseAuth.isGuestMode()) {
+                    state.authState = 'guest';
+                } else {
+                    state.authState = 'user';
+                }
+            } else {
+                state.authState = null;
+            }
         } else {
-            state.authState = null; // Default to null to show landing page
+            const storedMode = sessionStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem('authMode');
+            const legacyGuest = (sessionStorage.getItem('guest') === 'true') || (localStorage.getItem('guest') === 'true');
+            if (storedMode === 'guest' || legacyGuest) {
+                state.authState = 'guest';
+            } else if (storedMode === 'user') {
+                state.authState = 'user';
+            } else if (state.session.token) {
+                state.authState = 'user';
+            } else {
+                state.authState = null;
+            }
         }
         
         renderAuthView();
@@ -352,8 +367,22 @@
         return merged;
     }
     
-    function handleGuest() {
-        // Switch to guest mode and clear any existing authenticated session
+    async function handleGuest() {
+        // Switch to guest mode using Supabase Auth
+        if (window.SupabaseAuth) {
+            const result = await window.SupabaseAuth.startGuestSession();
+            if (result.success) {
+                state.authState = 'guest';
+                state.session.user = result.user;
+                setAuthMode('guest');
+                
+                if (dom.landingPage) dom.landingPage.hidden = true;
+                await enterAuthedApp(true);
+                return;
+            }
+        }
+        
+        // Fallback to legacy guest mode
         setAuthMode('guest');
         clearSession();
         state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
@@ -403,7 +432,13 @@
                 }
             });
         }
-        dom.openCreateButton?.addEventListener('click', openCreateModal);
+        dom.openCreateButton?.addEventListener('click', () => {
+            if (window.PostCreator) {
+                window.PostCreator.openModal();
+            } else {
+                openCreateModal();
+            }
+        });
         dom.createForm?.addEventListener('submit', handleCreateSubmit);
         dom.imageInput?.addEventListener('change', handleImageSelection);
         dom.reelInput?.addEventListener('change', handleReelSelection);
