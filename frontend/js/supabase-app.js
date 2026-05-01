@@ -10,6 +10,8 @@
   const SAVED_POSTS_STORAGE_KEY = 'instajoy_saved_posts';
   const POST_REACTIONS_STORAGE_KEY = 'instajoy_post_reactions';
   const DEFAULT_AVATAR = config.DEFAULT_AVATAR || 'ilogo.png';
+  const LOGIN_PAGE = 'index.html';
+  const HOME_PAGE = 'home.html';
   const MAX_IMAGE_BYTES = 200 * 1024;
   const MAX_REEL_BYTES = 1024 * 1024;
   const MAX_REEL_DURATION_SECONDS = 30;
@@ -54,7 +56,6 @@
   const VIEW_IDS = ['authView', 'homeView', 'reelsView', 'messagesView', 'searchView', 'notificationsView', 'profileView'];
 
   const state = {
-    authMode: 'landing',
     authMode: 'landing',
     authPanel: 'login',
     activeView: 'home',
@@ -158,6 +159,10 @@
 
     try {
       await restoreSession();
+      if (state.authMode !== 'landing' && shouldRedirectToHomePage()) {
+        redirectToPage(HOME_PAGE, getRequestedViewFromLocation());
+        return;
+      }
       await renderApp();
       await subscribeRealtime();
     } catch (error) {
@@ -520,6 +525,10 @@
       }
       await attemptRegisterFcmToken();
       showToast('Logged in successfully.', 'success');
+      if (shouldRedirectToHomePage()) {
+        redirectToPage(HOME_PAGE, 'home');
+        return;
+      }
       await enterInteractiveView('home');
     } finally {
       submitButton?.removeAttribute('disabled');
@@ -609,6 +618,10 @@
 
       await ensureCurrentUserProfile();
       await attemptRegisterFcmToken();
+      if (shouldRedirectToHomePage()) {
+        redirectToPage(HOME_PAGE, 'home');
+        return;
+      }
       await enterInteractiveView('home');
     } finally {
       submitButton?.removeAttribute('disabled');
@@ -633,6 +646,10 @@
     sessionStorage.setItem(AUTH_STORAGE_KEY, 'guest');
     localStorage.setItem('guest', 'true');
     showToast('Guest mode enabled. Browse freely, write actions are disabled.', 'info');
+    if (shouldRedirectToHomePage()) {
+      redirectToPage(HOME_PAGE, 'home');
+      return;
+    }
     await enterInteractiveView('home');
   }
 
@@ -793,7 +810,13 @@
     }
 
     if (action === 'switch-account') {
-      showToast('Switch account is not available in this preview.', 'info');
+      if (state.authMode === 'user') {
+        showToast('Sign in with another account from the login page.', 'info');
+        await logoutUser();
+        return;
+      }
+
+      redirectToPage(LOGIN_PAGE);
       return;
     }
 
@@ -905,6 +928,10 @@
 
     showToast('Logged out successfully.', 'success');
     setLandingMode();
+    if (shouldRedirectToLoginPage()) {
+      redirectToPage(LOGIN_PAGE);
+      return;
+    }
     showLanding();
   }
 
@@ -1074,6 +1101,36 @@
 
   function normalizeViewName(viewName) {
     return VIEW_IDS.includes(`${viewName}View`) ? viewName : 'home';
+  }
+
+  function getCurrentPageName() {
+    const pathname = window.location.pathname || '';
+    const segments = pathname.split('/').filter(Boolean);
+    return (segments[segments.length - 1] || LOGIN_PAGE).toLowerCase();
+  }
+
+  function getRequestedViewFromLocation() {
+    return normalizeViewName(window.location.hash.replace(/^#/, ''));
+  }
+
+  function buildPageUrl(pageName, viewName) {
+    const url = new URL(window.location.href);
+    const nextPath = pageName || LOGIN_PAGE;
+    url.pathname = url.pathname.replace(/[^/]*$/, nextPath);
+    url.hash = viewName ? `#${normalizeViewName(viewName)}` : '';
+    return url.toString();
+  }
+
+  function redirectToPage(pageName, viewName) {
+    window.location.replace(buildPageUrl(pageName, viewName));
+  }
+
+  function shouldRedirectToHomePage() {
+    return getCurrentPageName() !== HOME_PAGE;
+  }
+
+  function shouldRedirectToLoginPage() {
+    return getCurrentPageName() !== LOGIN_PAGE;
   }
 
   function clearLegacyGuestFlag() {
