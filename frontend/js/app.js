@@ -41,9 +41,12 @@
             refreshInterval: null,
         },
         storyViewer: {
+            items: [],
             activeIndex: 0,
             isOpen: false,
             advanceTimer: null,
+            mode: 'stories',
+            chainTitle: '',
         },
         reels: {
             items: [],
@@ -78,6 +81,12 @@
         comments: {
             targetType: '',
             targetId: '',
+        },
+        realtime: {
+            publicChannel: null,
+            notificationsChannel: null,
+            notificationsUserId: null,
+            refreshTimer: null,
         },
     };
 
@@ -186,6 +195,7 @@
         dom.moodHeading = document.getElementById('moodHeading') || document.getElementById('moodLabel');
         dom.storyModal = document.getElementById('storyModal');
         dom.storyVideo = document.getElementById('storyVideo');
+        dom.storyImage = document.getElementById('storyImage');
         dom.storyProgress = document.getElementById('storyProgress');
         dom.storyMetaAvatar = document.getElementById('storyMetaAvatar');
         dom.storyMetaUser = document.getElementById('storyMetaUser');
@@ -242,6 +252,30 @@
         dom.profileImageInput = document.getElementById('profileImageInput');
         dom.profileImagePreview = document.getElementById('profileImagePreview');
         dom.removeProfileImage = document.getElementById('removeProfileImage');
+        dom.storyCreateModal = document.getElementById('storyCreateModal');
+        dom.storyCreateForm = document.getElementById('storyCreateForm');
+        dom.storyTypeButtons = document.querySelectorAll('[data-story-type]');
+        dom.storyImageInput = document.getElementById('storyImageInput');
+        dom.storyVideoInput = document.getElementById('storyVideoInput');
+        dom.storyTextInput = document.getElementById('storyTextInput');
+        dom.storyComposerImageRow = document.getElementById('storyComposerImageRow');
+        dom.storyComposerVideoRow = document.getElementById('storyComposerVideoRow');
+        dom.storyComposerTextRow = document.getElementById('storyComposerTextRow');
+        dom.storyCreateSubmit = document.getElementById('storyCreateSubmit');
+        dom.chainCreateModal = document.getElementById('chainCreateModal');
+        dom.chainCreateForm = document.getElementById('chainCreateForm');
+        dom.chainExistingSelect = document.getElementById('chainExistingSelect');
+        dom.chainTitleInput = document.getElementById('chainTitleInput');
+        dom.chainPrivacyInput = document.getElementById('chainPrivacyInput');
+        dom.chainImageInput = document.getElementById('chainImageInput');
+        dom.chainVideoInput = document.getElementById('chainVideoInput');
+        dom.chainTextInput = document.getElementById('chainTextInput');
+        dom.chainTypeButtons = document.querySelectorAll('[data-chain-type]');
+        dom.chainComposerImageRow = document.getElementById('chainComposerImageRow');
+        dom.chainComposerVideoRow = document.getElementById('chainComposerVideoRow');
+        dom.chainComposerTextRow = document.getElementById('chainComposerTextRow');
+        dom.chainCaptionInput = document.getElementById('chainCaptionInput');
+        dom.chainCreateSubmit = document.getElementById('chainCreateSubmit');
         dom.toastHost = document.getElementById('toastHost');
     }
 
@@ -426,6 +460,14 @@
         dom.searchInput?.addEventListener('input', handleSearchInput);
         dom.profileEditForm?.addEventListener('submit', handleProfileEditSubmit);
         dom.profileImageInput?.addEventListener('change', handleProfileImageSelection);
+        dom.storyCreateForm?.addEventListener('submit', handleStoryCreateSubmit);
+        dom.chainCreateForm?.addEventListener('submit', handleChainCreateSubmit);
+        dom.storyTypeButtons.forEach((button) => {
+            button.addEventListener('click', () => setStoryComposerType(button.dataset.storyType || 'image'));
+        });
+        dom.chainTypeButtons.forEach((button) => {
+            button.addEventListener('click', () => setChainComposerType(button.dataset.chainType || 'image'));
+        });
         if (dom.chatBackButton) {
             dom.chatBackButton.addEventListener('click', () => {
                 state.messages.activeUser = null;
@@ -523,6 +565,8 @@
         });
 
         await fetchStories();
+        await syncUnreadNotificationCount();
+        await ensureRealtimeSubscriptions();
         
         if (useHash) {
             const handled = await resolveHashRoute();
@@ -2431,10 +2475,14 @@
         state.notifications = [];
         state.profile = { username: null, data: null, posts: [], pendingImageData: null };
         resetCreateForm();
+        resetStoryComposer();
+        resetChainComposer();
+        teardownRealtimeSubscriptions();
         
         // Reset auth mode and return to landing page
         sessionStorage.removeItem(AUTH_STORAGE_KEY);
         sessionStorage.removeItem('guest');
+        localStorage.removeItem('guest');
         state.authState = null;
         
         if (dom.landingPage) dom.landingPage.hidden = false;
