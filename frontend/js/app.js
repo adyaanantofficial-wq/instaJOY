@@ -100,6 +100,7 @@
         renderMoodChips();
         updateMoodHeading();
         setupObservers();
+        normalizeDemoMediaPaths();
 
         try {
             const hash = window.location.hash.replace(/^#/, '');
@@ -982,7 +983,7 @@
                     username: 'instaJOY',
                     avatar: DEFAULT_AVATAR,
                     thumb: DEFAULT_AVATAR,
-                    video: 'instaJOY(1)(1).mp4',
+                    video: 'instaJOY (1) (1).mp4',
                     timestamp: new Date(),
                 }];
             }
@@ -2464,6 +2465,52 @@
         `;
     }
 
+    function renderStories() {
+        if (!dom.storiesShell) return;
+        const staticItems = [
+            { label: 'Your story', icon: '+', className: 'story-create' },
+            { label: '+ Create chain', icon: '🔗', className: 'story-link' },
+        ];
+
+        const dynamicItems = (state.stories.items || []).map((story, index) => `
+            <div class="story-item">
+                <button class="story-card story-ring" type="button" data-action="open-story" data-story-index="${index}" aria-label="Open story from ${escapeHtml(story.username || 'story')}">
+                    <img class="story-avatar" src="${getAvatar(story.avatar)}" alt="${escapeHtml(story.username)}" onerror="this.src='ilogo.png'">
+                </button>
+                <div class="story-label">${escapeHtml(story.username || 'instaJOY')}</div>
+            </div>
+        `).join('');
+
+        dom.storiesShell.innerHTML = staticItems.map((item) => `
+            <div class="story-item">
+                <button class="story-card story-action ${item.className || ''}" type="button" aria-label="${item.label}">
+                    <span class="story-icon">${item.icon}</span>
+                </button>
+                <div class="story-label">${item.label}</div>
+            </div>
+        `).join('') + dynamicItems;
+    }
+
+    function renderMoodChips() {
+        if (!dom.moodChipRow) return;
+        const moods = [
+            { key: 'happy', label: '😄 Happy' },
+            { key: 'motivation', label: '🔥 Motivation' },
+            { key: 'calm', label: '😌 Calm' },
+            { key: 'music', label: '🎵 Music' },
+            { key: 'fun', label: '😂 Fun' },
+            { key: 'learn', label: '📚 Learn' },
+            { key: 'explore', label: '🌍 Explore' },
+            { key: 'mixed', label: '⭐ Mixed' },
+        ];
+
+        dom.moodChipRow.innerHTML = moods.map((mood) => `
+            <button type="button" class="mood-chip ${state.home.mood === mood.key ? 'active' : ''}" data-action="select-mood" data-mood="${mood.key}">
+                ${mood.label}
+            </button>
+        `).join('');
+    }
+
     function renderUserSearchCard(user) {
         return `
             <div class="search-item">
@@ -2705,6 +2752,17 @@
             return `${(bytes / 1024).toFixed(1)} KB`;
         }
         return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+
+    function normalizeDemoMediaPaths() {
+        const expectedVideo = 'instaJOY (1) (1).mp4';
+        if (Array.isArray(window.INSTAJOY_DEMO_DATA?.stories)) {
+            window.INSTAJOY_DEMO_DATA.stories.forEach((story) => {
+                if (story && typeof story.video === 'string' && story.video.includes('instaJOY')) {
+                    story.video = expectedVideo;
+                }
+            });
+        }
     }
 
     function truncateText(text, maxLength) {
