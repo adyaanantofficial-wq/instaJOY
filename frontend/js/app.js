@@ -164,11 +164,11 @@
         dom.homeFeed = document.getElementById('homeFeed');
         dom.homeLoadMore = document.getElementById('homeLoadMore');
         dom.homeEmpty = document.getElementById('homeEmpty');
-        dom.suggestionList = document.getElementById('suggestionList');
-        dom.refreshSuggestionsBtn = document.getElementById('refreshSuggestionsBtn');
-        dom.storiesShell = document.getElementById('storiesShell');
-        dom.moodChipRow = document.getElementById('moodChipRow');
-        dom.moodHeading = document.getElementById('moodHeading');
+        dom.suggestionList = document.getElementById('suggestionList') || document.getElementById('suggestedFollowList');
+        dom.refreshSuggestionsBtn = document.getElementById('refreshSuggestionsBtn') || document.querySelector('[data-action="refresh-suggestions"]');
+        dom.storiesShell = document.getElementById('storiesShell') || document.getElementById('storiesStrip');
+        dom.moodChipRow = document.getElementById('moodChipRow') || document.getElementById('moodSelector');
+        dom.moodHeading = document.getElementById('moodHeading') || document.getElementById('moodLabel');
         dom.storyModal = document.getElementById('storyModal');
         dom.storyVideo = document.getElementById('storyVideo');
         dom.storyProgress = document.getElementById('storyProgress');
@@ -934,12 +934,14 @@
 
         dom.suggestionList.innerHTML = items.map((user) => `
             <article class="suggestion-card" data-user-id="${user.id}">
-                <img class="suggestion-avatar" src="${user.avatar || DEFAULT_AVATAR}" alt="${user.username} avatar">
-                <div class="suggestion-info">
-                    <strong>${user.username}</strong>
-                    <span>${user.title || 'Social connector'}</span>
-                    <span class="suggestion-meta">${user.mutuals || 0} mutual connections</span>
-                    <span>${user.bio || 'Recommended to expand your feed.'}</span>
+                <div class="suggestion-details">
+                    <img class="avatar small" src="${user.avatar || DEFAULT_AVATAR}" alt="${user.username} avatar">
+                    <div class="suggestion-copy">
+                        <strong>${user.username}</strong>
+                        <span>${user.title || 'Recommended social creator'}</span>
+                        <span class="suggestion-meta">${user.mutuals || 0} mutual connections</span>
+                        <span>${user.bio || 'A curated recommendation to broaden your network.'}</span>
+                    </div>
                 </div>
                 <div class="suggestion-actions">
                     <button class="follow-button ${user.following ? 'following' : ''}" type="button" data-action="follow" data-user-id="${user.id}">

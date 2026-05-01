@@ -53,16 +53,16 @@
                 <div class="home-grid">
                     <div class="home-left">
                         <div class="view-intro home-intro">
-                           
+                            <div class="guest-badge" id="guestBadge" hidden>👀 Guest Mode - View Only</div>
                         </div>
                         <section class="mood-panel">
-                            <div id="moodSelector" class="mood-selector"></div>
+                            <div id="moodChipRow" class="mood-selector"></div>
                             <div class="mood-row">
-                                <div id="moodLabel" class="mood-label">Because you're in Mixed mood</div>
+                                <div id="moodHeading" class="mood-label">Because you're in Mixed mood</div>
                                 <div id="homeActionBar" class="home-action-bar"></div>
                             </div>
                         </section>
-                        <section id="storiesStrip" class="stories-strip"></section>
+                        <section id="storiesShell" class="stories-strip"></section>
                         <div class="home-feed-panel">
                             
                             <div id="homeFeed" class="stack-list"></div>
@@ -87,9 +87,9 @@
                                     <h3>Suggested for you</h3>
                                     <p>Follow accounts that match your interests.</p>
                                 </div>
-                                <button class="ghost-button compact" type="button" data-action="refresh-suggestions">Refresh</button>
+                                <button id="refreshSuggestionsBtn" class="ghost-button compact" type="button" data-action="refresh-suggestions">Refresh</button>
                             </div>
-                            <div id="suggestedFollowList" class="suggested-list"></div>
+                            <div id="suggestionList" class="suggested-list"></div>
                         </section>
                     </aside>
                 </div>
@@ -459,17 +459,6 @@
     <script src="frontend/js/reactionEngine.js"></script>
     <script src="frontend/js/capsuleEngine.js"></script>
     <script src="frontend/js/storyChainEngine.js"></script>
-        <script>
-            // Safety stub: some legacy scripts may call `loadHomeFeed` before
-            // the main app attaches it. Provide a no-op placeholder to avoid
-            // "is not defined" runtime errors until the real function loads.
-            if (typeof window.loadHomeFeed === 'undefined') {
-                window.loadHomeFeed = function (/* reset */) {
-                    // Intentionally empty; real implementation will replace this.
-                    console.debug('loadHomeFeed stub called before app initialization');
-                };
-            }
-        </script>
-    <script src="frontend/js/supabase-app.js"></script>
+    <script src="frontend/js/app.js"></script>
 </body>
 </html>
