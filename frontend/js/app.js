@@ -880,8 +880,9 @@
             }
 
             await syncSupabaseSessionState();
-            await enterAuthedApp(true);
-            showToast('Welcome back.', 'success');
+            showToast('Welcome back. Redirecting to feed...', 'success');
+            window.location.replace('frontend/feed.html');
+            return;
         } catch (error) {
             showToast(error.message || 'Login failed', 'error');
         }
