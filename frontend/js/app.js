@@ -29,6 +29,10 @@
             loading: false,
             mood: 'happy',
         },
+        suggestions: {
+            items: [],
+            loading: false,
+        },
         stories: {
             items: [],
             loading: false,
@@ -160,6 +164,8 @@
         dom.homeFeed = document.getElementById('homeFeed');
         dom.homeLoadMore = document.getElementById('homeLoadMore');
         dom.homeEmpty = document.getElementById('homeEmpty');
+        dom.suggestionList = document.getElementById('suggestionList');
+        dom.refreshSuggestionsBtn = document.getElementById('refreshSuggestionsBtn');
         dom.storiesShell = document.getElementById('storiesShell');
         dom.moodChipRow = document.getElementById('moodChipRow');
         dom.moodHeading = document.getElementById('moodHeading');
@@ -382,6 +388,7 @@
         document.body.addEventListener('click', handleBodyClick);
 
         dom.topbarAction?.addEventListener('click', handleTopbarAction);
+        dom.refreshSuggestionsBtn?.addEventListener('click', () => loadFriendSuggestions(true));
         dom.homeLoadMore?.addEventListener('click', () => loadHomeFeed());
         dom.reelsLoadMore?.addEventListener('click', () => loadReels());
         dom.messagesRefresh?.addEventListener('click', () => loadConversations(true));
@@ -553,8 +560,11 @@
         updateNav(viewName);
         updateTopbar(viewName);
 
-        if (viewName === 'home' && !state.home.items.length) {
-            await loadHomeFeed(true);
+        if (viewName === 'home') {
+            await Promise.all([
+                state.home.items.length ? Promise.resolve() : loadHomeFeed(true),
+                loadFriendSuggestions(state.suggestions.items.length === 0),
+            ]);
         }
 
         if (viewName === 'reels' && !state.reels.items.length) {
@@ -906,6 +916,90 @@
         if (guestBadge && isGuestMode() && state.home.items.length > 0) {
             guestBadge.hidden = false;
         }
+    }
+
+    function renderFriendSuggestions() {
+        if (!dom.suggestionList) return;
+
+        if (state.suggestions.loading) {
+            dom.suggestionList.innerHTML = '<div class="empty-state">Loading suggestions…</div>';
+            return;
+        }
+
+        const items = state.suggestions.items || [];
+        if (!items.length) {
+            dom.suggestionList.innerHTML = '<div class="empty-state">No suggestions available right now.</div>';
+            return;
+        }
+
+        dom.suggestionList.innerHTML = items.map((user) => `
+            <article class="suggestion-card" data-user-id="${user.id}">
+                <img class="suggestion-avatar" src="${user.avatar || DEFAULT_AVATAR}" alt="${user.username} avatar">
+                <div class="suggestion-info">
+                    <strong>${user.username}</strong>
+                    <span>${user.title || 'Social connector'}</span>
+                    <span class="suggestion-meta">${user.mutuals || 0} mutual connections</span>
+                    <span>${user.bio || 'Recommended to expand your feed.'}</span>
+                </div>
+                <div class="suggestion-actions">
+                    <button class="follow-button ${user.following ? 'following' : ''}" type="button" data-action="follow" data-user-id="${user.id}">
+                        ${user.following ? 'Following' : 'Follow'}
+                    </button>
+                </div>
+            </article>
+        `).join('');
+    }
+
+    async function loadFriendSuggestions(forceRefresh = false) {
+        if (state.suggestions.loading && !forceRefresh) {
+            return;
+        }
+
+        state.suggestions.loading = true;
+        renderFriendSuggestions();
+
+        try {
+            let suggestions = [];
+            if (!forceRefresh && state.suggestions.items.length) {
+                suggestions = state.suggestions.items;
+            } else {
+                const response = await apiRequest('/users/suggestions', { auth: false });
+                if (response && Array.isArray(response.suggestions) && response.suggestions.length) {
+                    suggestions = response.suggestions;
+                } else {
+                    suggestions = (window.INSTAJOY_DEMO_DATA && Array.isArray(window.INSTAJOY_DEMO_DATA.suggestions)) ? window.INSTAJOY_DEMO_DATA.suggestions : [];
+                }
+            }
+
+            state.suggestions.items = (suggestions || []).map((user) => ({
+                id: user.id || user.username || `suggestion-${Math.random().toString(36).slice(2)}`,
+                username: user.username || user.name || 'guest_user',
+                avatar: user.avatar || user.profileImage || DEFAULT_AVATAR,
+                title: user.title || 'Recommended creator',
+                mutuals: Number(user.mutuals || 0),
+                bio: user.bio || user.description || 'A thoughtful person worth connecting with.',
+                following: Boolean(user.following),
+            }));
+        } catch (error) {
+            state.suggestions.items = (window.INSTAJOY_DEMO_DATA && Array.isArray(window.INSTAJOY_DEMO_DATA.suggestions)) ? window.INSTAJOY_DEMO_DATA.suggestions : [];
+        } finally {
+            state.suggestions.loading = false;
+            renderFriendSuggestions();
+        }
+    }
+
+    function handleFriendSuggestionClick(event) {
+        const button = event.target.closest('button[data-action="follow"]');
+        if (!button) return;
+
+        const userId = button.dataset.userId;
+        const selected = state.suggestions.items.find((item) => item.id === userId);
+        if (!selected) return;
+
+        selected.following = !selected.following;
+        button.textContent = selected.following ? 'Following' : 'Follow';
+        button.classList.toggle('following', selected.following);
+        showToast(selected.following ? `Following ${selected.username}` : `Unfollowed ${selected.username}`, 'success');
     }
 
     function renderFeedSkeleton(count = 2) {
@@ -2220,6 +2314,11 @@
             await switchView('profile');
             await loadProfile(target.dataset.username, true);
             window.location.hash = `profile-${target.dataset.username}`;
+            return;
+        }
+
+        if (action === 'follow') {
+            handleFriendSuggestionClick(event);
             return;
         }
 

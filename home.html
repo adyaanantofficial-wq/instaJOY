@@ -1428,9 +1428,245 @@
                 font-size: 17px;
             }
 
+            .home-suggestion-panel {
+                margin: 16px 12px 0;
+                padding: 18px;
+                border-radius: 24px;
+                background: rgba(255, 255, 255, 0.95);
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                box-shadow: 0 18px 38px rgba(29, 78, 168, 0.08);
+            }
+
+            .suggestion-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 16px;
+            }
+
+            .suggestion-header h3 {
+                margin: 0;
+                font-size: 1rem;
+                color: #0f172a;
+            }
+
+            .suggestion-header p {
+                margin: 4px 0 0;
+                font-size: 0.95rem;
+                color: #475569;
+                max-width: 420px;
+            }
+
+            .suggestion-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 14px;
+            }
+
+            .suggestion-card {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 14px;
+                border-radius: 18px;
+                background: #eef7ff;
+                border: 1px solid rgba(59, 130, 246, 0.12);
+            }
+
+            .suggestion-avatar {
+                width: 56px;
+                height: 56px;
+                border-radius: 50%;
+                object-fit: cover;
+                border: 2px solid #ffffff;
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+            }
+
+            .suggestion-info {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-width: 0;
+            }
+
+            .suggestion-info strong {
+                font-size: 0.96rem;
+                color: #0f172a;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .suggestion-info span {
+                font-size: 0.82rem;
+                color: #475569;
+                line-height: 1.4;
+            }
+
+            .suggestion-meta {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                margin-top: 6px;
+                color: #2563eb;
+                font-size: 0.78rem;
+                font-weight: 700;
+            }
+
+            .suggestion-actions {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                align-items: flex-end;
+            }
+
+            .follow-button {
+                padding: 10px 14px;
+                border-radius: 999px;
+                border: 1px solid rgba(15, 23, 42, 0.1);
+                background: #ffffff;
+                color: #0f172a;
+                font-size: 0.9rem;
+                font-weight: 700;
+                transition: transform 0.18s ease, box-shadow 0.18s ease;
+            }
+
+            .follow-button:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+            }
+
+            .follow-button.following {
+                background: #0f172a;
+                color: #ffffff;
+                border-color: transparent;
+            }
+
             .stack-list {
                 padding: 0 12px;
             }
+        }
+
+        .home-suggestion-panel {
+            margin: 16px 12px 0;
+            padding: 18px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 18px 38px rgba(29, 78, 168, 0.08);
+        }
+
+        .suggestion-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .suggestion-header h3 {
+            margin: 0;
+            font-size: 1rem;
+            color: #0f172a;
+        }
+
+        .suggestion-header p {
+            margin: 4px 0 0;
+            font-size: 0.95rem;
+            color: #475569;
+            max-width: 420px;
+        }
+
+        .suggestion-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+        }
+
+        .suggestion-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px;
+            border-radius: 18px;
+            background: #eef7ff;
+            border: 1px solid rgba(59, 130, 246, 0.12);
+        }
+
+        .suggestion-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #ffffff;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        }
+
+        .suggestion-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .suggestion-info strong {
+            font-size: 0.96rem;
+            color: #0f172a;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .suggestion-info span {
+            font-size: 0.82rem;
+            color: #475569;
+            line-height: 1.4;
+        }
+
+        .suggestion-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            color: #2563eb;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .suggestion-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        .follow-button {
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(15, 23, 42, 0.1);
+            background: #ffffff;
+            color: #0f172a;
+            font-size: 0.9rem;
+            font-weight: 700;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .follow-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        }
+
+        .follow-button.following {
+            background: #0f172a;
+            color: #ffffff;
+            border-color: transparent;
+        }
+
+        .stack-list {
+            padding: 0 12px;
         }
     </style>
 </head>
@@ -1463,6 +1699,16 @@
                     <div id="storiesShell" class="stories-shell" role="list"></div>
                     <div id="moodChipRow" class="mood-row"></div>
                     <div id="moodHeading" class="home-mood-note">Because you're in Happy mood</div>
+                    <div class="home-suggestion-panel">
+                        <div class="suggestion-header">
+                            <div>
+                                <h3>Suggested Friends</h3>
+                                <p>Connect with recommended creators and grow your network.</p>
+                            </div>
+                            <button id="refreshSuggestionsBtn" class="ghost-button compact" type="button">Refresh</button>
+                        </div>
+                        <div id="suggestionList" class="suggestion-grid" aria-live="polite"></div>
+                    </div>
                 </div>
                 <div class="guest-badge" id="guestBadge" hidden>👀 Guest Mode - View Only</div>
                 <ul id="homeFeed" class="stack-list"></ul>
@@ -1729,6 +1975,32 @@
                     thumb: 'ilogo.png',
                     video: 'instaJOY (1) (1).mp4',
                     timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000),
+                }
+            ],
+            suggestions: [
+                {
+                    id: 'user6',
+                    username: 'lisa_travels',
+                    avatar: 'ilogo.png',
+                    title: 'Travel storyteller',
+                    mutuals: 4,
+                    bio: 'Sharing journey highlights and local city tips.',
+                },
+                {
+                    id: 'user7',
+                    username: 'maya_mindful',
+                    avatar: 'ilogo.png',
+                    title: 'Wellness coach',
+                    mutuals: 7,
+                    bio: 'Daily self-care prompts, mindful routines, and calm living.',
+                },
+                {
+                    id: 'user8',
+                    username: 'noah_creates',
+                    avatar: 'ilogo.png',
+                    title: 'Creative design lead',
+                    mutuals: 5,
+                    bio: 'Design process, tech tips, and visual storytelling.',
                 }
             ]
         };
