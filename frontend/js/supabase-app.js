@@ -11,7 +11,7 @@
   const POST_REACTIONS_STORAGE_KEY = 'instajoy_post_reactions';
   const DEFAULT_AVATAR = config.DEFAULT_AVATAR || 'ilogo.png';
   const LOGIN_PAGE = 'index.html';
-  const HOME_PAGE = 'home.html';
+  const HOME_PAGE = 'feed.html';
   const MAX_IMAGE_BYTES = 200 * 1024;
   const MAX_REEL_BYTES = 1024 * 1024;
   const MAX_REEL_DURATION_SECONDS = 30;
