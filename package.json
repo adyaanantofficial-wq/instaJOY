@@ -9,6 +9,7 @@
     "apply:supabase-schema": "node ./scripts/apply-supabase-schema.js",
     "verify:supabase-db": "node ./scripts/verify-supabase-db.js",
     "verify:storage-policy": "node ./scripts/verify-storage-policy.js"
+    ,"migrate:mongo-to-supabase": "node ./scripts/migrate-mongo-to-supabase.js"
   },
   "engines": {
     "node": ">=18.0.0 <21.0.0"
