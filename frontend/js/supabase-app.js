@@ -7,6 +7,8 @@
 
   const AUTH_STORAGE_KEY = 'INSTAJOY_AUTH_MODE';
   const PENDING_PROFILE_KEY = 'instajoy_pending_profile';
+  const SAVED_POSTS_STORAGE_KEY = 'instajoy_saved_posts';
+  const POST_REACTIONS_STORAGE_KEY = 'instajoy_post_reactions';
   const DEFAULT_AVATAR = config.DEFAULT_AVATAR || 'ilogo.png';
   const MAX_IMAGE_BYTES = 200 * 1024;
   const MAX_REEL_BYTES = 1024 * 1024;
@@ -75,6 +77,7 @@
       threads: {},
     },
     likedPostIds: new Set(),
+    savedPostIds: new Set(),
     followingUserIds: new Set(),
     postLoading: false,
     reelLoading: false,
@@ -97,6 +100,10 @@
       avatar: '',
     },
     postReactions: {},
+    capabilitiesCache: {
+      savedPostsTable: 'unknown',
+      postReactionsTable: 'unknown',
+    },
   };
 
   const dom = {};
@@ -107,6 +114,7 @@
   async function init() {
     cacheDom();
     bindEvents();
+    hydratePersistedPostInteractions();
 
     // DEV TEST HOOKS: expose minimal debug helpers for local testing (no-op in production)
     try {
@@ -740,16 +748,9 @@
     }
 
     if (action === 'react' && postId) {
-      if (state.authMode !== 'user') {
-        showToast('Sign in to react to posts.', 'error');
-        return;
-      }
       if (window.ReactionEngine?.renderRadialMenu) {
         window.ReactionEngine.renderRadialMenu(postId, actionButton, (reactionKey) => {
-          setPostReaction(postId, reactionKey);
-          const reaction = window.ReactionEngine.getReaction(reactionKey);
-          showToast(`Reacted with ${reaction.label}.`, 'success');
-          renderHomeFeed();
+          applyPostReaction(postId, reactionKey);
         });
       }
       return;
@@ -764,6 +765,11 @@
       sharePost(postId);
       // Asynchronously log strong intent
       if (state.authMode === 'user') supabase.rpc('log_interaction', { p_post_id: postId, p_interaction: 'share', p_weight: 2.0 }).catch(()=>{});
+      return;
+    }
+
+    if (action === 'bookmark' && postId) {
+      await toggleSavedPost(postId);
       return;
     }
     
@@ -1726,6 +1732,92 @@
     state.likedPostIds = new Set((data || []).map((item) => item.post_id));
   }
 
+  function hydratePersistedPostInteractions() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAVED_POSTS_STORAGE_KEY) || '[]');
+      if (Array.isArray(saved)) {
+        state.savedPostIds = new Set(saved.filter(Boolean));
+      }
+    } catch (_) {}
+
+    try {
+      const reactions = JSON.parse(localStorage.getItem(POST_REACTIONS_STORAGE_KEY) || '{}');
+      if (reactions && typeof reactions === 'object') {
+        state.postReactions = reactions;
+      }
+    } catch (_) {}
+  }
+
+  function persistSavedPosts() {
+    try {
+      localStorage.setItem(SAVED_POSTS_STORAGE_KEY, JSON.stringify(Array.from(state.savedPostIds)));
+    } catch (_) {}
+  }
+
+  function persistPostReactions() {
+    try {
+      localStorage.setItem(POST_REACTIONS_STORAGE_KEY, JSON.stringify(state.postReactions || {}));
+    } catch (_) {}
+  }
+
+  async function refreshSavedPostsForVisibleFeed() {
+    if (!state.posts.length) return;
+    if (state.authMode !== 'user' || !state.user) return;
+    if (state.capabilitiesCache.savedPostsTable === 'missing') return;
+
+    const postIds = state.posts.map((p) => normalizePostRecord(p).id).filter(Boolean);
+    if (!postIds.length) return;
+
+    const { data, error } = await supabase
+      .from('saved_posts')
+      .select('post_id')
+      .eq('user_id', state.user.id)
+      .in('post_id', postIds);
+
+    if (error) {
+      if ((error.message || '').toLowerCase().includes('saved_posts')) {
+        state.capabilitiesCache.savedPostsTable = 'missing';
+      }
+      return;
+    }
+
+    state.capabilitiesCache.savedPostsTable = 'available';
+    (data || []).forEach((row) => state.savedPostIds.add(row.post_id));
+    persistSavedPosts();
+  }
+
+  async function refreshReactionsForVisibleFeed() {
+    if (!state.posts.length) return;
+    if (state.authMode !== 'user' || !state.user) return;
+    if (state.capabilitiesCache.postReactionsTable === 'missing') return;
+
+    const postIds = state.posts.map((p) => normalizePostRecord(p).id).filter(Boolean);
+    if (!postIds.length) return;
+
+    const { data, error } = await supabase
+      .from('post_reactions_v2')
+      .select('post_id, reaction_type, updated_at')
+      .eq('user_id', state.user.id)
+      .in('post_id', postIds);
+
+    if (error) {
+      if ((error.message || '').toLowerCase().includes('post_reactions_v2')) {
+        state.capabilitiesCache.postReactionsTable = 'missing';
+      }
+      return;
+    }
+
+    state.capabilitiesCache.postReactionsTable = 'available';
+    (data || []).forEach((row) => {
+      if (!row.post_id || !row.reaction_type) return;
+      state.postReactions[row.post_id] = {
+        reaction: row.reaction_type,
+        updated_at: row.updated_at || new Date().toISOString(),
+      };
+    });
+    persistPostReactions();
+  }
+
   async function loadHomeFeed(reset) {
     if (state.postLoading) {
       return;
@@ -1772,6 +1864,8 @@
     state.posts = state.posts.concat(pagePosts);
     await refreshFollowingForVisibleFeed();
     await refreshLikedPostsForVisibleFeed();
+    await refreshSavedPostsForVisibleFeed();
+    await refreshReactionsForVisibleFeed();
     await refreshCountsForVisibleFeed();
     await loadFeedAffinity();
     state.posts = scoreFeedPosts(state.posts);
@@ -1832,6 +1926,7 @@
     const author = deriveAuthor(normalized);
     const createdAt = new Date(normalized.created_at).toLocaleString();
     const liked = state.likedPostIds.has(normalized.id);
+    const saved = state.savedPostIds.has(normalized.id);
     const likeDisabled = state.authMode !== 'user';
     const currentReaction = getPostReaction(normalized.id);
     const activeReaction = currentReaction ? window.ReactionEngine?.getReaction(currentReaction.reaction) : null;
@@ -1875,14 +1970,14 @@
             <button class="action-button ${liked ? 'liked' : ''}" data-action="toggle-like" data-post-id="${normalized.id}" ${likeDisabled ? 'disabled' : ''}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="${liked ? '#ed4956' : 'none'}" stroke="${liked ? '#ed4956' : 'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
             </button>
-            <button class="action-button ${activeReaction ? 'reacted' : ''}" data-action="react" data-post-id="${normalized.id}" ${state.authMode !== 'user' ? 'disabled' : ''} title="${activeReaction ? `Reacted ${escapeHtml(activeReaction.label)}` : 'React'}">
+            <button class="action-button ${activeReaction ? 'reacted' : ''}" data-action="react" data-post-id="${normalized.id}" title="${activeReaction ? `Reacted ${escapeHtml(activeReaction.label)}` : 'React'}">
               ${activeReaction ? `<span class="reaction-icon">${escapeHtml(activeReaction.emoji)}</span>` : `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12.5l1.5 1.5L14 10"/><path d="M6 21c0-4.97 4.03-9 9-9h0c4.97 0 9 4.03 9 9"/></svg>`}
             </button>
             <button class="action-button" data-action="comment" data-post-id="${normalized.id}">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>
-            <button class="action-button" data-action="bookmark" data-post-id="${normalized.id}" title="Save post">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+            <button class="action-button ${saved ? 'saved' : ''}" data-action="bookmark" data-post-id="${normalized.id}" title="${saved ? 'Saved' : 'Save post'}">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="${saved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
             </button>
           </div>
         </footer>
@@ -1902,6 +1997,58 @@
       ...state.postReactions,
       [postId]: { reaction: reactionKey, updated_at: new Date().toISOString() },
     };
+    persistPostReactions();
+  }
+
+  async function applyPostReaction(postId, reactionKey) {
+    if (!postId || !reactionKey) return;
+    setPostReaction(postId, reactionKey);
+
+    if (state.authMode === 'user' && state.user && state.capabilitiesCache.postReactionsTable !== 'missing') {
+      const { error } = await supabase
+        .from('post_reactions_v2')
+        .upsert({
+          post_id: postId,
+          user_id: state.user.id,
+          reaction_type: reactionKey,
+        }, { onConflict: 'post_id,user_id' });
+      if (error && (error.message || '').toLowerCase().includes('post_reactions_v2')) {
+        state.capabilitiesCache.postReactionsTable = 'missing';
+      }
+    }
+
+    const reaction = window.ReactionEngine?.getReaction(reactionKey);
+    showToast(reaction ? `Reacted with ${reaction.label}.` : 'Reaction saved.', 'success');
+    renderHomeFeed();
+  }
+
+  async function toggleSavedPost(postId) {
+    if (!postId) return;
+    const isSaved = state.savedPostIds.has(postId);
+
+    if (state.authMode === 'user' && state.user && state.capabilitiesCache.savedPostsTable !== 'missing') {
+      if (isSaved) {
+        const { error } = await supabase.from('saved_posts').delete().match({ user_id: state.user.id, post_id: postId });
+        if (error && (error.message || '').toLowerCase().includes('saved_posts')) {
+          state.capabilitiesCache.savedPostsTable = 'missing';
+        }
+      } else {
+        const { error } = await supabase.from('saved_posts').insert({ user_id: state.user.id, post_id: postId });
+        if (error && (error.message || '').toLowerCase().includes('saved_posts')) {
+          state.capabilitiesCache.savedPostsTable = 'missing';
+        }
+      }
+    }
+
+    if (isSaved) {
+      state.savedPostIds.delete(postId);
+      showToast('Removed from saved posts.', 'success');
+    } else {
+      state.savedPostIds.add(postId);
+      showToast('Post saved.', 'success');
+    }
+    persistSavedPosts();
+    renderHomeFeed();
   }
 
   function renderPostReactionSummary(postId) {

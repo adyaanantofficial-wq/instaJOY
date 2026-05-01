@@ -367,7 +367,7 @@ button.primary-button::before {
 
 .home-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-columns: minmax(0, 1fr);
     gap: 1.4rem;
 }
 
@@ -378,9 +378,7 @@ button.primary-button::before {
 }
 
 .home-right {
-    position: sticky;
-    top: 1rem;
-    align-self: start;
+    display: none;
 }
 
 .home-feed-panel,
@@ -812,6 +810,11 @@ button.primary-button::before {
 .action-button.liked {
     background: rgba(237, 73, 86, 0.14);
     color: #ed4956;
+}
+
+.action-button.saved {
+    background: rgba(31, 143, 174, 0.12);
+    color: var(--accent-deep);
 }
 
 .notification-unread {
@@ -1595,7 +1598,7 @@ select:focus {
     }
 
     .home-grid {
-        grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .search-columns {
