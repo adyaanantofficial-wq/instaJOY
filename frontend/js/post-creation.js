@@ -353,7 +353,10 @@
     },
 
     buildPostObject() {
-      const user = window.SupabaseAuth?.getUser() || { id: 'guest' };
+      const user = window.SupabaseAuth?.getUser();
+      if (!user?.id) {
+        throw new Error('Login required to create a post.');
+      }
       const selectedType = this.state.postType;
       const type = selectedType === 'video' ? 'reel' : selectedType === 'text' ? 'text' : 'image';
 
@@ -491,15 +494,6 @@
       const supabase = window.supabaseClient;
       if (!supabase) throw new Error('Supabase not initialized');
 
-      // Guest posts are local-only
-      if (post.user_id === 'guest') {
-        // Store in localStorage for guest users
-        const guestPosts = JSON.parse(localStorage.getItem('instajoy_guest_posts') || '[]');
-        guestPosts.unshift({ ...post, id: `guest_${Date.now()}` });
-        localStorage.setItem('instajoy_guest_posts', JSON.stringify(guestPosts));
-        return;
-      }
-
       // Save authenticated posts to Supabase
       const insertPayload = {
         user_id: post.user_id,
@@ -535,8 +529,8 @@
     },
 
     openModal() {
-      if (window.SupabaseAuth?.isGuestMode()) {
-        this.showInfo('Login to post. Guest mode is view-only.');
+      if (!window.SupabaseAuth?.isAuthenticated()) {
+        this.showInfo('Login to post.');
         return;
       }
       this.resetForm();

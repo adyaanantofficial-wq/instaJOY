@@ -1,78 +1,51 @@
 /**
  * Supabase Authentication Module for instaJOY
- * Handles auth flow: login, signup, guest mode, logout, session persistence
+ * Handles login, signup, logout, session persistence, and profile bootstrap.
  */
 
 (function initSupabaseAuth() {
   const config = window.INSTAJOY_CONFIG || {};
-  
-  // Validate Supabase config
+
   if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY) {
     console.error('Supabase config missing. Please set SUPABASE_URL and SUPABASE_ANON_KEY');
     return;
   }
 
-  // Import Supabase auth JS
   const { createClient } = window.supabase;
-  
   const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce',
-    }
+    },
   });
 
-  // Auth state management
   const AuthState = {
-    // Local session tracking
-    SESSION_STORAGE_KEY: 'INSTAJOY_SESSION',
-    GUEST_MODE_KEY: 'INSTAJOY_GUEST_MODE',
-    GUEST_SESSION_KEY: 'INSTAJOY_GUEST_SESSION_ID',
-
-    // Current session
     currentSession: null,
     currentUser: null,
-    isGuest: false,
     isLoading: true,
 
-    // Initialize from stored session
     async init() {
       this.isLoading = true;
-      
+
       try {
-        // Check for stored session
-        const storedSession = sessionStorage.getItem(this.SESSION_STORAGE_KEY);
-        const isGuestMode = sessionStorage.getItem(this.GUEST_MODE_KEY) === 'true';
-
-        if (isGuestMode) {
-          // Restore guest session
-          this.isGuest = true;
-          const guestId = sessionStorage.getItem(this.GUEST_SESSION_KEY) || this.generateGuestId();
-          this.currentSession = { user: { id: guestId, app_metadata: { provider: 'guest' } } };
-          sessionStorage.setItem(this.GUEST_SESSION_KEY, guestId);
-          return { session: this.currentSession, user: this.currentSession.user };
-        }
-
-        // Try to restore Supabase session
         const { data: { session }, error } = await supabase.auth.getSession();
-        
         if (error) {
           console.warn('Session restore error:', error);
           return { session: null, user: null };
         }
 
-        if (session) {
-          this.currentSession = session;
-          this.currentUser = session.user;
-          this.isGuest = false;
-          // Verify user profile exists
-          await this.ensureProfile(session.user);
-          return { session, user: session.user };
+        if (!session?.user) {
+          this.currentSession = null;
+          this.currentUser = null;
+          return { session: null, user: null };
         }
 
-        return { session: null, user: null };
+        this.currentSession = session;
+        this.currentUser = session.user;
+        await this.ensureProfile(session.user);
+        return { session, user: session.user };
       } catch (error) {
         console.error('Auth init error:', error);
         return { session: null, user: null };
@@ -81,11 +54,14 @@
       }
     },
 
-    // Sign up with email/password
     async signup(email, password, username = '') {
       try {
-        const safeUsername = username || email.split('@')[0];
-        const displayName = safeUsername;
+        const safeUsername = String(username || email.split('@')[0] || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9._]/g, '')
+          .slice(0, 30);
+        const displayName = safeUsername || 'member';
 
         const { data, error } = await supabase.auth.signUp({
           email,
@@ -93,18 +69,16 @@
           options: {
             data: {
               display_name: displayName,
-              username: safeUsername,
-            }
-          }
+              username: displayName,
+            },
+          },
         });
 
         if (error) throw error;
-        
-        this.currentSession = data.session || null;
-        this.currentUser = data.user;
-        this.isGuest = false;
 
-        // Create profile for new user
+        this.currentSession = data.session || null;
+        this.currentUser = data.user || null;
+
         if (data.user) {
           await this.ensureProfile(data.user);
         }
@@ -115,21 +89,18 @@
       }
     },
 
-    // Sign in with email/password
     async signin(email, password) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
-          password
+          password,
         });
 
         if (error) throw error;
-        
-        this.currentSession = data.session;
-        this.currentUser = data.user;
-        this.isGuest = false;
 
-        // Verify profile exists
+        this.currentSession = data.session || null;
+        this.currentUser = data.user || null;
+
         if (data.user) {
           await this.ensureProfile(data.user);
         }
@@ -140,127 +111,91 @@
       }
     },
 
-    // Guest mode session
-    async startGuestSession() {
-      try {
-        // Generate unique guest session ID
-        const guestId = this.generateGuestId();
-        
-        this.isGuest = true;
-        this.currentSession = {
-          user: {
-            id: guestId,
-            email: `guest_${guestId}@instajoy.local`,
-            app_metadata: { provider: 'guest' }
-          }
-        };
-        this.currentUser = this.currentSession.user;
-
-        // Store in sessionStorage (not localStorage) for session-only persistence
-        sessionStorage.setItem(this.GUEST_MODE_KEY, 'true');
-        sessionStorage.setItem(this.GUEST_SESSION_KEY, guestId);
-
-        return { success: true, user: this.currentUser };
-      } catch (error) {
-        return { success: false, error: error.message };
-      }
-    },
-
-    // Generate unique guest ID
-    generateGuestId() {
-      return `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    },
-
-    // Ensure user profile exists in database
     async ensureProfile(user) {
+      if (!user?.id) {
+        return;
+      }
+
       try {
         const { data, error } = await supabase
           .from('profiles')
           .select('id')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (error && error.code === 'PGRST116') {
-          // Profile doesn't exist, create it
-          const username = user.email?.split('@')[0] || `user_${user.id.substr(0, 8)}`;
-          const displayName = user.user_metadata?.display_name || username;
+        if (error) {
+          throw error;
+        }
 
-          await supabase.from('profiles').insert({
-            id: user.id,
-            username: username,
-            display_name: displayName,
-            bio: '',
-            avatar_url: user.user_metadata?.avatar_url || null
-          });
+        if (data?.id) {
+          return;
+        }
+
+        const usernameBase = String(
+          user.user_metadata?.username
+          || user.email?.split('@')[0]
+          || `user_${String(user.id).slice(0, 8)}`
+        )
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9._]/g, '')
+          .slice(0, 30) || `user_${String(user.id).replace(/-/g, '').slice(0, 8)}`;
+        const displayName = user.user_metadata?.display_name || usernameBase;
+
+        const { error: insertError } = await supabase.from('profiles').insert({
+          id: user.id,
+          username: usernameBase,
+          display_name: displayName.slice(0, 50),
+          bio: '',
+          avatar_url: user.user_metadata?.avatar_url || null,
+        });
+
+        if (insertError && insertError.code !== '23505') {
+          throw insertError;
         }
       } catch (error) {
         console.warn('Profile ensure error:', error);
       }
     },
 
-    // Logout
     async logout() {
       try {
-        // Clear guest mode
-        if (this.isGuest) {
-          sessionStorage.removeItem(this.GUEST_MODE_KEY);
-          sessionStorage.removeItem(this.GUEST_SESSION_KEY);
-        } else {
-          // Sign out from Supabase
-          await supabase.auth.signOut();
-        }
-
+        await supabase.auth.signOut();
         this.currentSession = null;
         this.currentUser = null;
-        this.isGuest = false;
-
         return { success: true };
       } catch (error) {
         return { success: false, error: error.message };
       }
     },
 
-    // Get current session
     getSession() {
       return this.currentSession;
     },
 
-    // Get current user
     getUser() {
       return this.currentUser;
     },
 
-    // Check if authenticated
     isAuthenticated() {
-      return !!(this.currentUser && (this.isGuest || this.currentSession));
+      return Boolean(this.currentUser && this.currentSession);
     },
 
-    // Check if guest mode
     isGuestMode() {
-      return this.isGuest;
+      return false;
     },
 
-    // Subscribe to auth changes
     onAuthStateChange(callback) {
-      const unsubscribe = supabase.auth.onAuthStateChange((event, session) => {
-        this.currentSession = session;
+      const subscription = supabase.auth.onAuthStateChange((event, session) => {
+        this.currentSession = session || null;
         this.currentUser = session?.user || null;
-        
-        if (event === 'SIGNED_OUT') {
-          this.isGuest = false;
-          sessionStorage.removeItem(this.GUEST_MODE_KEY);
-          sessionStorage.removeItem(this.GUEST_SESSION_KEY);
-        }
-
         callback(event, session);
       });
 
-      return unsubscribe;
-    }
+      return subscription;
+    },
   };
 
-  // Export to window for use in app.js
   window.SupabaseAuth = AuthState;
   window.supabaseClient = supabase;
-
 })();

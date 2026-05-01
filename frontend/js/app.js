@@ -14,7 +14,7 @@
 
     const state = {
         authMode: 'login',
-        // `authState` tracks runtime mode: 'guest' or 'user' (stored in localStorage as `authMode`)
+        // `authState` tracks whether a real authenticated user session is active.
         authState: null,
         activeView: 'auth',
         session: {
@@ -90,16 +90,11 @@
     async function init() {
         cacheDom();
         
-        // Initialize Supabase Auth
         if (window.SupabaseAuth) {
             const authResult = await window.SupabaseAuth.init();
             if (authResult.user) {
                 await syncSupabaseSessionState();
-                if (window.SupabaseAuth.isGuestMode()) {
-                    state.authState = 'guest';
-                } else {
-                    state.authState = 'user';
-                }
+                state.authState = 'user';
             } else {
                 state.authState = null;
             }
@@ -110,17 +105,12 @@
                     return;
                 }
 
-                if (!window.SupabaseAuth.isGuestMode()) {
-                    clearSession();
-                    state.authState = null;
-                }
+                clearSession();
+                state.authState = null;
             });
         } else {
             const storedMode = sessionStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem('authMode');
-            const legacyGuest = (sessionStorage.getItem('guest') === 'true') || (localStorage.getItem('guest') === 'true');
-            if (storedMode === 'guest' || legacyGuest) {
-                state.authState = 'guest';
-            } else if (storedMode === 'user') {
+            if (storedMode === 'user') {
                 state.authState = 'user';
             } else if (state.session.token) {
                 state.authState = 'user';
@@ -152,19 +142,8 @@
                 await enterAuthedApp(true);
             } else if (isRootPage) {
                 showAuthView();
-            } else if (state.authState === 'guest') {
-                // Guest mode: skip auth, go directly to home feed
-                if (dom.landingPage) dom.landingPage.hidden = true;
-                state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
-                persistSession();
-                await enterAuthedApp(true);
             } else if (shouldShowAppFromHash) {
-                // Support direct links to home/reels/search while preserving guest preview mode.
-                if (dom.landingPage) dom.landingPage.hidden = true;
-                state.authState = 'guest';
-                state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
-                persistSession();
-                await enterAuthedApp(true);
+                showAuthView('login');
             } else {
                 if (dom.landingPage) dom.landingPage.hidden = false;
                 if (dom.appShell) dom.appShell.hidden = true;
@@ -181,7 +160,7 @@
         }
 
         window.addEventListener('hashchange', async () => {
-            if (state.session.user || isGuestMode()) {
+            if (state.session.user && state.authState === 'user') {
                 await resolveHashRoute();
             }
         });
@@ -267,16 +246,16 @@
     }
 
     // ============================================
-    // GUEST MODE HELPER & LANDING PAGE HANDLERS
+    // AUTH HELPERS & LANDING PAGE HANDLERS
     // ============================================
     
     function isGuestMode() {
-        return state.authState === 'guest' || sessionStorage.getItem(AUTH_STORAGE_KEY) === 'guest' || localStorage.getItem('guest') === 'true';
+        return false;
     }
 
     function requireLogin(actionName) {
-        if (isGuestMode()) {
-            showToast(`Login required for ${actionName}. Guest mode allows viewing only.`, 'info');
+        if (!state.session.user || state.authState !== 'user') {
+            showToast(`Login required for ${actionName}.`, 'info');
             return false;
         }
         return true;
@@ -386,44 +365,19 @@
     }
     
     async function handleGuest() {
-        // Switch to guest mode using Supabase Auth
-        if (window.SupabaseAuth) {
-            const result = await window.SupabaseAuth.startGuestSession();
-            if (result.success) {
-                state.authState = 'guest';
-                state.session.user = {
-                    ...result.user,
-                    username: 'guest',
-                    profileImage: DEFAULT_AVATAR,
-                    avatar: DEFAULT_AVATAR,
-                };
-                setAuthMode('guest');
-                
-                if (dom.landingPage) dom.landingPage.hidden = true;
-                await enterAuthedApp(true);
-                return;
-            }
-        }
-        
-        // Fallback to legacy guest mode
-        setAuthMode('guest');
-        clearSession();
-        state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
-        persistSession();
-        
-        if (dom.landingPage) dom.landingPage.hidden = true;
-        enterAuthedApp(true);
+        showAuthView('login');
     }
 
     function setAuthMode(mode) {
-        state.authState = mode === 'user' ? 'user' : 'guest';
+        state.authState = mode === 'user' ? 'user' : null;
         try {
-            sessionStorage.setItem(AUTH_STORAGE_KEY, state.authState);
-            if (state.authState === 'guest') {
-                sessionStorage.setItem('guest', 'true');
+            if (state.authState) {
+                sessionStorage.setItem(AUTH_STORAGE_KEY, state.authState);
             } else {
-                sessionStorage.removeItem('guest');
+                sessionStorage.removeItem(AUTH_STORAGE_KEY);
             }
+            sessionStorage.removeItem('guest');
+            localStorage.removeItem('guest');
         } catch (e) {
             // ignore storage errors
         }
@@ -438,7 +392,6 @@
                 showAuthView('login');
             });
         }
-        document.getElementById('guestBtn')?.addEventListener('click', handleGuest);
         
         document.body.addEventListener('click', handleBodyClick);
         
@@ -562,20 +515,11 @@
     async function enterAuthedApp(useHash) {
         if (dom.appShell) dom.appShell.hidden = false;
         if (dom.bottomNav) dom.bottomNav.hidden = false;
-        
-        // Show guest badge if in guest mode
-        const guestBadge = document.getElementById('guestBadge');
-        if (guestBadge && isGuestMode()) {
-            guestBadge.hidden = false;
-        }
-
-        // Disable or hide write actions for guest users
         if (dom.openCreateButton) {
-            dom.openCreateButton.hidden = isGuestMode();
+            dom.openCreateButton.hidden = false;
         }
-        // Hide messages nav if guest
         document.querySelectorAll('.nav-button[data-view="messages"]').forEach((btn) => {
-            btn.hidden = isGuestMode();
+            btn.hidden = false;
         });
 
         await fetchStories();
@@ -596,6 +540,7 @@
         state.authState = null;
         sessionStorage.removeItem(AUTH_STORAGE_KEY);
         sessionStorage.removeItem('guest');
+        localStorage.removeItem('guest');
         if (dom.landingPage) dom.landingPage.hidden = true;
         if (dom.appShell) dom.appShell.hidden = false;
         if (dom.bottomNav) dom.bottomNav.hidden = true;
@@ -619,8 +564,7 @@
     }
 
     async function switchView(viewName) {
-        // Allow access if token OR guest exists, redirect only if BOTH are missing
-        if (!state.session.user && !isGuestMode()) {
+        if (!state.session.user || state.authState !== 'user') {
             showAuthView();
             return;
         }
@@ -667,10 +611,7 @@
 
         if (viewName === 'profile') {
             const username = state.profile.username || state.session.user?.username;
-            if (isGuestMode() && (!username || username === 'guest')) {
-                dom.profileSummary.innerHTML = '<div class="empty-state">Guest mode has no personal profile. Open a creator profile from the feed or log in to manage your own account.</div>';
-                dom.profileGrid.innerHTML = '';
-            } else {
+            if (username) {
                 await loadProfile(username);
             }
         }
@@ -970,7 +911,6 @@
                 dom.homeFeed.innerHTML = renderFeedSkeleton(3);
             }
 
-            // Pass auth: false so guests don't send tokens but still fetch the public feed
             const response = await apiRequest(`/posts/feed?${query.toString()}`, { auth: false });
             const nextPosts = Array.isArray(response.posts) ? response.posts : [];
             const filteredPosts = filterFeedPosts(nextPosts, state.home.mood);
@@ -978,29 +918,12 @@
             state.home.cursor = response.nextCursor || null;
             state.home.hasMore = Boolean(response.hasMore);
 
-            if (!state.home.items.length && isGuestMode()) {
-                const demoData = window.INSTAJOY_DEMO_DATA || { posts: [] };
-                state.home.items = Array.isArray(demoData.posts) ? filterFeedPosts(demoData.posts, state.home.mood) : [];
-                state.home.items = state.home.items.length ? state.home.items : (demoData.posts || []);
-            }
-
             applyGuestEngagementToFeedItems(state.home.items);
             state.home.items = rankFeedItems(state.home.items, state.home.mood);
 
             renderHomeFeed();
         } catch (error) {
-            if (isGuestMode()) {
-                // Fallback to demo data if public API fails for guests
-                const demoData = window.INSTAJOY_DEMO_DATA || { posts: [] };
-                state.home.items = Array.isArray(demoData.posts) ? filterFeedPosts(demoData.posts, state.home.mood) : [];
-                state.home.items = state.home.items.length ? state.home.items : (demoData.posts || []);
-                state.home.hasMore = false;
-                applyGuestEngagementToFeedItems(state.home.items);
-                state.home.items = rankFeedItems(state.home.items, state.home.mood);
-                renderHomeFeed();
-            } else {
-                showToast(error.message || 'Failed to load feed', 'error');
-            }
+            showToast(error.message || 'Failed to load feed', 'error');
         } finally {
             state.home.loading = false;
             if (dom.homeLoadMore) {
@@ -1012,8 +935,6 @@
 
     function renderHomeFeed() {
         if (!dom.homeFeed) return;
-
-        applyGuestEngagementToFeedItems(state.home.items);
         
         if (!state.home.items.length) {
             if (state.home.loading) {
@@ -1034,12 +955,6 @@
             dom.homeEmpty.hidden = true;
         }
         dom.homeFeed.innerHTML = state.home.items.map((post) => renderPostCard(post)).join('');
-        
-        // Show guest badge if in guest mode
-        const guestBadge = document.getElementById('guestBadge');
-        if (guestBadge && isGuestMode() && state.home.items.length > 0) {
-            guestBadge.hidden = false;
-        }
     }
 
     function renderFriendSuggestions() {
@@ -1099,7 +1014,7 @@
 
             state.suggestions.items = (suggestions || []).map((user) => ({
                 id: user.id || user.username || `suggestion-${Math.random().toString(36).slice(2)}`,
-                username: user.username || user.name || 'guest_user',
+                username: user.username || user.name || 'member',
                 avatar: user.avatar || user.profileImage || DEFAULT_AVATAR,
                 title: user.title || 'Recommended creator',
                 mutuals: Number(user.mutuals || 0),
@@ -2778,7 +2693,7 @@
             headers['Content-Type'] = 'application/json';
         }
 
-        // Do not attach auth header in guest mode. Only attach if explicitly allowed and token exists.
+        // Attach auth only when we have a real user session and the call allows it.
         if (!isGuestMode() && settings.auth !== false && state.session.token) {
             headers.Authorization = `Bearer ${state.session.token}`;
         }
@@ -2847,9 +2762,14 @@
         if (state.session.user) {
             localStorage.setItem(USER_KEY, JSON.stringify(state.session.user));
         }
-        // persist authMode as well
         try {
-            sessionStorage.setItem(AUTH_STORAGE_KEY, state.authState || 'guest');
+            if (state.authState) {
+                sessionStorage.setItem(AUTH_STORAGE_KEY, state.authState);
+            } else {
+                sessionStorage.removeItem(AUTH_STORAGE_KEY);
+            }
+            sessionStorage.removeItem('guest');
+            localStorage.removeItem('guest');
         } catch (e) {}
     }
 
@@ -2862,8 +2782,7 @@
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
-        // switch to guest mode after clearing authenticated session
-        setAuthMode('guest');
+        setAuthMode(null);
     }
 
     function parseStoredUser() {
@@ -2889,7 +2808,7 @@
     }
 
     function requireAuthenticatedUserRecord() {
-        if (!state.session.user?.id || isGuestMode()) {
+        if (!state.session.user?.id || state.authState !== 'user') {
             throw new Error('Authentication required');
         }
         return state.session.user;
@@ -2964,7 +2883,7 @@
     }
 
     async function fetchPostInteractionState(postIds) {
-        if (!Array.isArray(postIds) || !postIds.length || !state.session.user?.id || isGuestMode()) {
+        if (!Array.isArray(postIds) || !postIds.length || !state.session.user?.id || state.authState !== 'user') {
             return { likedIds: new Set(), reactionMap: {} };
         }
 
@@ -2991,13 +2910,114 @@
         return { likedIds, reactionMap };
     }
 
+    async function fetchProfilesMapByIds(userIds) {
+        const uniqueIds = [...new Set((userIds || []).filter(Boolean))];
+        if (!uniqueIds.length) {
+            return new Map();
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('profiles')
+            .select('id, username, display_name, bio, avatar_url')
+            .in('id', uniqueIds);
+
+        if (error) {
+            throw error;
+        }
+
+        return new Map((data || []).map((profile) => [profile.id, profile]));
+    }
+
+    async function fetchCountMapByPost(tableName, postIds) {
+        const uniqueIds = [...new Set((postIds || []).filter(Boolean))];
+        if (!uniqueIds.length) {
+            return new Map();
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from(tableName)
+            .select('post_id')
+            .in('post_id', uniqueIds);
+
+        if (error) {
+            throw error;
+        }
+
+        const counts = new Map();
+        (data || []).forEach((row) => {
+            counts.set(row.post_id, (counts.get(row.post_id) || 0) + 1);
+        });
+        return counts;
+    }
+
+    async function hydratePostRows(rows, interactionState) {
+        const postRows = Array.isArray(rows) ? rows : [];
+        if (!postRows.length) {
+            return [];
+        }
+
+        const [profilesMap, likeCountMap, commentCountMap] = await Promise.all([
+            fetchProfilesMapByIds(postRows.map((row) => row.user_id)),
+            fetchCountMapByPost('likes', postRows.map((row) => row.id)),
+            fetchCountMapByPost('comments', postRows.map((row) => row.id)),
+        ]);
+
+        return postRows.map((row) => normalizeSupabasePostRow({
+            ...row,
+            profiles: profilesMap.get(row.user_id) || null,
+            like_count: likeCountMap.get(row.id) || 0,
+            comment_count: commentCountMap.get(row.id) || 0,
+        }, interactionState));
+    }
+
+    async function hydrateCommentRows(rows) {
+        const commentRows = Array.isArray(rows) ? rows : [];
+        if (!commentRows.length) {
+            return [];
+        }
+
+        const profilesMap = await fetchProfilesMapByIds(commentRows.map((row) => row.user_id));
+        return commentRows.map((comment) => ({
+            id: comment.id,
+            text: comment.body,
+            createdAt: comment.created_at,
+            author: {
+                id: comment.user_id,
+                username: profilesMap.get(comment.user_id)?.username || 'member',
+                profileImage: profilesMap.get(comment.user_id)?.avatar_url || DEFAULT_AVATAR,
+            },
+        }));
+    }
+
+    async function hydrateStories(rows) {
+        const storyRows = Array.isArray(rows) ? rows : [];
+        if (!storyRows.length) {
+            return [];
+        }
+
+        const profilesMap = await fetchProfilesMapByIds(storyRows.map((row) => row.user_id));
+        return storyRows.map((story) => {
+            const profile = profilesMap.get(story.user_id);
+            return {
+                id: story.id,
+                username: profile?.username || 'instaJOY',
+                avatar: profile?.avatar_url || DEFAULT_AVATAR,
+                thumb: profile?.avatar_url || DEFAULT_AVATAR,
+                video: story.media_url,
+                timestamp: story.created_at,
+            };
+        });
+    }
+
     function normalizeSupabasePostRow(post, interactionState) {
         const likedIds = interactionState?.likedIds || new Set();
         const reactionMap = interactionState?.reactionMap || {};
         const text = post?.content || post?.caption || '';
-        const likeCount = Number(post?.likes?.[0]?.count || 0);
-        const commentCount = Number(post?.comments?.[0]?.count || 0);
-        const profile = post?.profiles || {};
+        const likeCount = Number((post?.like_count ?? post?.likeCount ?? post?.likes?.[0]?.count) || 0);
+        const commentCount = Number((post?.comment_count ?? post?.commentCount ?? post?.comments?.[0]?.count) || 0);
+        const profile = post?.profiles || post?.profile || {};
 
         return {
             id: post.id,
@@ -3031,20 +3051,7 @@
         const limit = Number(options.limit || 8);
         let query = client
             .from('posts')
-            .select(`
-                id,
-                user_id,
-                type,
-                category,
-                caption,
-                content,
-                image_url,
-                media_url,
-                created_at,
-                profiles (id, username, avatar_url),
-                likes:likes(count),
-                comments:comments(count)
-            `)
+            .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
             .order('created_at', { ascending: false })
             .limit(limit + 1);
 
@@ -3068,7 +3075,7 @@
         }
 
         const interactionState = await fetchPostInteractionState(rows.map((row) => row.id));
-        let posts = rows.map((row) => normalizeSupabasePostRow(row, interactionState));
+        let posts = await hydratePostRows(rows, interactionState);
 
         if (options.mood && options.mood !== 'mixed') {
             posts = filterFeedPosts(posts, options.mood);
@@ -3140,20 +3147,7 @@
         const client = getSupabaseClientOrThrow();
         const { data, error } = await client
             .from('posts')
-            .select(`
-                id,
-                user_id,
-                type,
-                category,
-                caption,
-                content,
-                image_url,
-                media_url,
-                created_at,
-                profiles (id, username, avatar_url),
-                likes:likes(count),
-                comments:comments(count)
-            `)
+            .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
             .eq('user_id', profile.id)
             .order('created_at', { ascending: false });
 
@@ -3162,7 +3156,7 @@
         }
 
         const interactionState = await fetchPostInteractionState((data || []).map((row) => row.id));
-        return (data || []).map((row) => normalizeSupabasePostRow(row, interactionState));
+        return hydratePostRows(data || [], interactionState);
     }
 
     async function fetchConversationList() {
@@ -3266,7 +3260,7 @@
         const client = getSupabaseClientOrThrow();
         const { data, error } = await client
             .from('comments')
-            .select('id, body, created_at, user_id, profiles (id, username, avatar_url)')
+            .select('id, body, created_at, user_id')
             .eq('post_id', postId)
             .order('created_at', { ascending: true });
 
@@ -3274,16 +3268,7 @@
             throw error;
         }
 
-        return (data || []).map((comment) => ({
-            id: comment.id,
-            text: comment.body,
-            createdAt: comment.created_at,
-            author: {
-                id: comment.profiles?.id || comment.user_id,
-                username: comment.profiles?.username || 'member',
-                profileImage: comment.profiles?.avatar_url || DEFAULT_AVATAR,
-            },
-        }));
+        return hydrateCommentRows(data || []);
     }
 
     async function fetchSupabaseUserById(userId) {
@@ -3380,23 +3365,16 @@
             const limit = Number(requestUrl.searchParams.get('limit') || 10);
             const { data, error } = await client
                 .from('stories')
-                    .select('id, media_url, type, created_at, profiles (username, avatar_url)')
+                .select('id, user_id, media_url, type, created_at, expires_at')
+                .gt('expires_at', new Date().toISOString())
+                .order('created_at', { ascending: false })
                 .limit(limit);
 
             if (error) {
                 throw error;
             }
 
-            return {
-                stories: (data || []).map((story) => ({
-                    id: story.id,
-                    username: story.profiles?.username || 'instaJOY',
-                    avatar: story.profiles?.avatar_url || DEFAULT_AVATAR,
-                    thumb: story.profiles?.avatar_url || DEFAULT_AVATAR,
-                    video: story.media_url,
-                    timestamp: story.created_at,
-                })),
-            };
+            return { stories: await hydrateStories(data || []) };
         }
 
         if (pathname === '/posts/feed' && method === 'GET') {
@@ -3592,20 +3570,7 @@
                 client.from('profiles').select('id, username, bio, avatar_url').ilike('username', `%${query}%`).limit(12),
                 client
                     .from('posts')
-                    .select(`
-                        id,
-                        user_id,
-                        type,
-                        category,
-                        caption,
-                        content,
-                        image_url,
-                        media_url,
-                        created_at,
-                        profiles (id, username, avatar_url),
-                        likes:likes(count),
-                        comments:comments(count)
-                    `)
+                    .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                     .or(`caption.ilike.%${query}%,content.ilike.%${query}%`)
                     .order('created_at', { ascending: false })
                     .limit(12),
@@ -3629,7 +3594,7 @@
                     bio: profile.bio || '',
                     profileImage: profile.avatar_url || DEFAULT_AVATAR,
                 })),
-                posts: posts.map((row) => normalizeSupabasePostRow(row, interactionState)),
+                posts: await hydratePostRows(posts, interactionState),
             };
         }
 
@@ -3649,27 +3614,15 @@
             const { data, error } = await client
                 .from('posts')
                 .insert(payload)
-                .select(`
-                    id,
-                    user_id,
-                    type,
-                    category,
-                    caption,
-                    content,
-                    image_url,
-                    media_url,
-                    created_at,
-                    profiles (id, username, avatar_url),
-                    likes:likes(count),
-                    comments:comments(count)
-                `)
+                .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                 .single();
 
             if (error) {
                 throw error;
             }
 
-            return { post: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+            const [post] = await hydratePostRows([data], await fetchPostInteractionState([data.id]));
+            return { post };
         }
 
         if (pathname === '/reels' && method === 'POST') {
@@ -3683,27 +3636,15 @@
                     content: String(settings.body?.caption || '').trim() || null,
                     media_url: settings.body?.videoData || null,
                 })
-                .select(`
-                    id,
-                    user_id,
-                    type,
-                    category,
-                    caption,
-                    content,
-                    image_url,
-                    media_url,
-                    created_at,
-                    profiles (id, username, avatar_url),
-                    likes:likes(count),
-                    comments:comments(count)
-                `)
+                .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                 .single();
 
             if (error) {
                 throw error;
             }
 
-            return { reel: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+            const [reel] = await hydratePostRows([data], await fetchPostInteractionState([data.id]));
+            return { reel };
         }
 
         const postCommentsMatch = pathname.match(/^\/(posts|reels)\/([^/]+)\/comments$/);
@@ -3828,20 +3769,7 @@
 
             const { data, error } = await client
                 .from('posts')
-                .select(`
-                    id,
-                    user_id,
-                    type,
-                    category,
-                    caption,
-                    content,
-                    image_url,
-                    media_url,
-                    created_at,
-                    profiles (id, username, avatar_url),
-                    likes:likes(count),
-                    comments:comments(count)
-                `)
+                .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
                 .eq('id', postMatch[1])
                 .single();
 
@@ -3849,7 +3777,8 @@
                 throw error;
             }
 
-            return { post: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+            const [postRecord] = await hydratePostRows([data], await fetchPostInteractionState([data.id]));
+            return { post: postRecord };
         }
 
         if (postMatch && method === 'DELETE') {

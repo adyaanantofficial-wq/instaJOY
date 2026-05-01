@@ -103,13 +103,11 @@
           throw new Error('Supabase not initialized');
         }
 
-        // For authenticated users: load posts from followed users + recommendations
-        if (user && user.id !== 'guest') {
+        if (user?.id) {
           return await this.loadAuthenticatedFeed(supabase, user);
         }
 
-        // For guest users: load latest posts
-        return await this.loadGuestFeed(supabase);
+        throw new Error('Login required to load the feed.');
       } catch (error) {
         console.error('Feed load error:', error);
         throw error;
@@ -157,22 +155,6 @@
       return this.state.posts;
     },
 
-    async loadGuestFeed(supabase) {
-      const { data: posts, error } = await supabase
-        .from('posts')
-        .select('id, user_id, type, category, caption, content, image_url, media_url, created_at')
-        .order('created_at', { ascending: false })
-        .limit(this.state.pageSize);
-
-      if (error) throw error;
-
-      const processed = await this.enrichPosts(supabase, posts, null);
-      this.state.posts = processed;
-      this.state.hasMore = posts.length === this.state.pageSize;
-
-      return this.state.posts;
-    },
-
     /**
      * Process posts: add engagement counts, format data
      */
@@ -198,7 +180,7 @@
      * Load user's engagement data (likes, saves)
      */
     async loadUserEngagement(user) {
-      if (!user || user.id === 'guest') return;
+      if (!user?.id) return;
 
       const supabase = window.supabaseClient;
 
@@ -252,7 +234,7 @@
      */
     async likePost(postId) {
       const user = window.SupabaseAuth?.getUser();
-      if (!user || user.id === 'guest') {
+      if (!user?.id) {
         this.showError('Login to like posts');
         return false;
       }
@@ -305,7 +287,7 @@
      */
     async savePost(postId) {
       const user = window.SupabaseAuth?.getUser();
-      if (!user) {
+      if (!user?.id) {
         this.showError('Login to save posts');
         return false;
       }
