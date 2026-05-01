@@ -179,6 +179,65 @@
             border-bottom: 1px solid #dbdbdb;
         }
 
+        .home-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) minmax(280px, 360px);
+            gap: 24px;
+            padding: 0 16px 24px;
+            max-width: 1240px;
+            margin: 0 auto;
+            align-items: start;
+        }
+
+        .home-left {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .home-right {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .profile-summary-card {
+            padding: 18px;
+            border-radius: 24px;
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 20px 48px rgba(29, 78, 168, 0.08);
+        }
+
+        .profile-summary-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .profile-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: #f5f8ff;
+        }
+
+        .profile-sidebar-role {
+            display: block;
+            margin-top: 4px;
+            font-size: 0.9rem;
+            color: #475569;
+        }
+
+        .profile-sidebar-text {
+            margin-top: 14px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #475569;
+        }
+
         .stories-shell {
             display: flex;
             align-items: flex-start;
@@ -1391,6 +1450,22 @@
                 border-radius: 0 0 24px 24px;
             }
 
+            .home-grid {
+                grid-template-columns: 1fr;
+                padding: 0 12px 18px;
+            }
+
+            .home-right {
+                width: 100%;
+            }
+
+            .profile-summary-card,
+            .home-suggestion-panel {
+                position: relative;
+                top: 0;
+                margin: 0;
+            }
+
             .stories-shell {
                 gap: 18px;
                 padding: 0 4px 14px;
@@ -1708,29 +1783,45 @@
 
             <!-- Home Feed View -->
             <section id="homeView" class="view">
-                <div class="home-top-panel">
-                    <div id="storiesShell" class="stories-shell" role="list"></div>
-                    <div id="moodChipRow" class="mood-row"></div>
-                    <div id="moodHeading" class="home-mood-note">Because you're in Happy mood</div>
-                    <div class="home-suggestion-panel">
-                        <div class="suggestion-header">
-                            <div>
-                                <h3>Suggested Friends</h3>
-                                <p>Connect with recommended creators and grow your network.</p>
-                            </div>
-                            <button id="refreshSuggestionsBtn" class="ghost-button compact" type="button">Refresh</button>
+                <div class="home-grid">
+                    <div class="home-left">
+                        <div class="home-top-panel">
+                            <div id="storiesShell" class="stories-shell" role="list"></div>
+                            <div id="moodChipRow" class="mood-row"></div>
+                            <div id="moodHeading" class="home-mood-note">Because you're in Happy mood</div>
                         </div>
-                        <div id="suggestionList" class="suggestion-grid" aria-live="polite"></div>
+                        <div class="guest-badge" id="guestBadge" hidden>👀 Guest Mode - View Only</div>
+                        <ul id="homeFeed" class="stack-list"></ul>
+                        <div id="homeEmpty" class="empty-state" hidden>
+                            <div class="empty-state-icon">📝</div>
+                            <h3>No posts yet</h3>
+                            <p>Start following people to see their posts here</p>
+                        </div>
+                        <button id="homeLoadMore" class="action-button" type="button" hidden>Load more posts</button>
                     </div>
+                    <aside class="home-right">
+                        <section class="profile-summary-card">
+                            <div class="profile-summary-row">
+                                <img class="avatar profile-avatar" src="ilogo.png" alt="Your avatar">
+                                <div>
+                                    <strong id="profileSidebarName">instaJOY</strong>
+                                    <span class="profile-sidebar-role">Your social feed</span>
+                                </div>
+                            </div>
+                            <p class="profile-sidebar-text">Keep your home feed lively by following interesting creators and sharing what inspires you.</p>
+                        </section>
+                        <section class="home-suggestion-panel">
+                            <div class="suggestion-header">
+                                <div>
+                                    <h3>Suggested Friends</h3>
+                                    <p>Connect with recommended creators and grow your network.</p>
+                                </div>
+                                <button id="refreshSuggestionsBtn" class="ghost-button compact" type="button">Refresh</button>
+                            </div>
+                            <div id="suggestionList" class="suggestion-grid" aria-live="polite"></div>
+                        </section>
+                    </aside>
                 </div>
-                <div class="guest-badge" id="guestBadge" hidden>👀 Guest Mode - View Only</div>
-                <ul id="homeFeed" class="stack-list"></ul>
-                <div id="homeEmpty" class="empty-state" hidden>
-                    <div class="empty-state-icon">📝</div>
-                    <h3>No posts yet</h3>
-                    <p>Start following people to see their posts here</p>
-                </div>
-                <button id="homeLoadMore" class="action-button" type="button" hidden>Load more posts</button>
             </section>
 
             <div id="storyModal" class="story-modal hidden" aria-hidden="true">

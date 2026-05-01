@@ -1,6 +1,6 @@
 (function bootstrapInstaJOY() {
     const config = window.INSTAJOY_CONFIG || {};
-    const API_BASE_URL = config.API_BASE_URL;
+    const API_BASE_URL = config.API_BASE_URL || '/api';
     const DEFAULT_AVATAR = config.DEFAULT_AVATAR || 'ilogo.png';
     const TOKEN_KEY = config.TOKEN_KEY || 'instajoy_access_token';
     const REFRESH_TOKEN_KEY = config.REFRESH_TOKEN_KEY || 'instajoy_refresh_token';

@@ -1,5 +1,4 @@
-window.INSTAJOY_CONFIG = Object.freeze({
-    SUPABASE_URL: 'https://czvcvgxpshqotqbltzew.supabase.co',
+window.INSTAJOY_CONFIG = Object.freeze({    API_BASE_URL: '/api',    SUPABASE_URL: 'https://czvcvgxpshqotqbltzew.supabase.co',
     SUPABASE_ANON_KEY: 'sb_publishable_EkMzZbfsxv5EkvAoALOloA_51sAtybz',
     FIREBASE_API_KEY: 'AIzaSyDp-lZXneB4AKTsNeWVuMeZahQsvl3jzNo',
     FIREBASE_PROJECT_ID: 'instajoy-78c2e',
