@@ -412,7 +412,7 @@
         if (loginBtn) {
             loginBtn.addEventListener('click', () => {
                 if (dom.landingPage) dom.landingPage.hidden = true;
-                showAuthView();
+                showAuthView('login');
             });
         }
         document.getElementById('guestBtn')?.addEventListener('click', handleGuest);
@@ -546,8 +546,9 @@
         await switchView('home');
     }
 
-    function showAuthView() {
+    function showAuthView(mode = 'login') {
         state.activeView = 'auth';
+        state.authMode = mode;
         state.authState = null;
         sessionStorage.removeItem(AUTH_STORAGE_KEY);
         sessionStorage.removeItem('guest');
@@ -557,6 +558,9 @@
         if (dom.authView) dom.authView.hidden = false;
         if (dom.brandSubtitle) dom.brandSubtitle.textContent = 'Welcome';
         if (dom.topbarAction) dom.topbarAction.hidden = true;
+        if (dom.authView) {
+            renderAuthView();
+        }
 
         [
             dom.homeView,
