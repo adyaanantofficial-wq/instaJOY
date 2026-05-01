@@ -43,7 +43,7 @@
         storyViewer: {
             activeIndex: 0,
             isOpen: false,
-            advanceTimer:null,
+            advanceTimer: null,
         },
         reels: {
             items: [],
@@ -146,6 +146,9 @@
 
             if (state.session.user && state.authState === 'user') {
                 if (dom.landingPage) dom.landingPage.hidden = true;
+                if (!window.location.hash && redirectToFeedRouteIfNeeded()) {
+                    return;
+                }
                 await enterAuthedApp(true);
             } else if (isRootPage) {
                 showAuthView();
@@ -859,6 +862,17 @@
         dom.authView.querySelector('#signupForm')?.addEventListener('submit', handleSignup);
     }
 
+    function redirectToFeedRouteIfNeeded() {
+        const path = window.location.pathname || '';
+        const currentPage = path.split('/').filter(Boolean).slice(-1)[0] || '';
+        const isRootPage = currentPage === '' || currentPage === 'index.html';
+        if (!isRootPage || window.location.hash) {
+            return false;
+        }
+        window.location.replace('frontend/feed.html');
+        return true;
+    }
+
     async function handleLogin(event) {
         event.preventDefault();
 
@@ -878,6 +892,9 @@
             }
 
             await syncSupabaseSessionState();
+            if (redirectToFeedRouteIfNeeded()) {
+                return;
+            }
             await enterAuthedApp(true);
             showToast('Welcome back.', 'success');
         } catch (error) {
@@ -909,6 +926,9 @@
             state.session.token = session?.access_token || '';
             state.session.refreshToken = session?.refresh_token || '';
             storeSession({ token: state.session.token, refreshToken: state.session.refreshToken, user: result.user });
+            if (redirectToFeedRouteIfNeeded()) {
+                return;
+            }
             await enterAuthedApp(true);
             showToast('Account ready. Let’s share something joyful.', 'success');
         } catch (error) {
