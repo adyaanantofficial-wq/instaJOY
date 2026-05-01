@@ -112,6 +112,7 @@
                 || hash.startsWith('post-')
                 || hash.startsWith('profile-')
                 || hash.startsWith('messages-');
+            const isRootPage = window.location.pathname === '/' || window.location.pathname.endsWith('/index.html');
 
             if (state.session.token && state.authState === 'user') {
                 if (dom.landingPage) dom.landingPage.hidden = true;
@@ -130,6 +131,8 @@
                 state.session.user = { id: 'guest', username: 'Guest User', avatar: DEFAULT_AVATAR };
                 persistSession();
                 await enterAuthedApp(true);
+            } else if (isRootPage) {
+                showAuthView();
             } else {
                 if (dom.landingPage) dom.landingPage.hidden = false;
                 if (dom.appShell) dom.appShell.hidden = true;
