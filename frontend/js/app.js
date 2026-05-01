@@ -815,13 +815,23 @@
         const email = document.getElementById('loginEmail').value.trim();
         const password = document.getElementById('loginPassword').value;
 
+        if (!window.SupabaseAuth) {
+            showToast('Authentication is unavailable. Please refresh the page.', 'error');
+            return;
+        }
+
         try {
-            const response = await apiRequest('/auth/login', {
-                method: 'POST',
-                body: { email, password },
-                auth: false,
-            });
-            storeSession(response);
+            const result = await window.SupabaseAuth.signin(email, password);
+            if (!result.success) {
+                showToast(result.error || 'Login failed. Please try again.', 'error');
+                return;
+            }
+
+            const session = window.supabaseClient ? (await window.supabaseClient.auth.getSession()).data?.session : null;
+            state.session.user = result.user;
+            state.session.token = session?.access_token || '';
+            state.session.refreshToken = session?.refresh_token || '';
+            storeSession({ token: state.session.token, refreshToken: state.session.refreshToken, user: result.user });
             await enterAuthedApp(true);
             showToast('Welcome back.', 'success');
         } catch (error) {
@@ -836,13 +846,23 @@
         const email = document.getElementById('signupEmail').value.trim();
         const password = document.getElementById('signupPassword').value;
 
+        if (!window.SupabaseAuth) {
+            showToast('Authentication is unavailable. Please refresh the page.', 'error');
+            return;
+        }
+
         try {
-            const response = await apiRequest('/auth/register', {
-                method: 'POST',
-                body: { username, email, password },
-                auth: false,
-            });
-            storeSession(response);
+            const result = await window.SupabaseAuth.signup(email, password, username);
+            if (!result.success) {
+                showToast(result.error || 'Signup failed. Please try again.', 'error');
+                return;
+            }
+
+            const session = window.supabaseClient ? (await window.supabaseClient.auth.getSession()).data?.session : null;
+            state.session.user = result.user;
+            state.session.token = session?.access_token || '';
+            state.session.refreshToken = session?.refresh_token || '';
+            storeSession({ token: state.session.token, refreshToken: state.session.refreshToken, user: result.user });
             await enterAuthedApp(true);
             showToast('Account ready. Let’s share something joyful.', 'success');
         } catch (error) {

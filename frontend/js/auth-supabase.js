@@ -82,15 +82,18 @@
     },
 
     // Sign up with email/password
-    async signup(email, password, displayName = '') {
+    async signup(email, password, username = '') {
       try {
+        const safeUsername = username || email.split('@')[0];
+        const displayName = safeUsername;
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              display_name: displayName || email.split('@')[0],
-              username: email.split('@')[0],
+              display_name: displayName,
+              username: safeUsername,
             }
           }
         });
