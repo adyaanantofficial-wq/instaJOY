@@ -2280,7 +2280,7 @@
                             <div class="file-upload">
                                 <input id="videoInput" type="file" accept="video/*" hidden>
                                 <label for="videoInput" class="upload-label">
-                                    <span>🎬 Choose video (max 30s, 50MB)</span>
+                                    <span>🎬 Choose video (max 30s, 1MB)</span>
                                 </label>
                                 <div id="videoPreview" class="media-preview" hidden>
                                     <video id="videoPreviewVid" controls></video>
@@ -2353,6 +2353,7 @@
                     <h3>No reels yet</h3>
                     <p>Check back soon for video content</p>
                 </div>
+                <button id="reelsLoadMore" class="action-button" type="button" hidden>Load more reels</button>
             </section>
 
             <!-- Search View -->
@@ -2363,33 +2364,57 @@
                 </div>
                 <div style="padding: 16px;">
                     <input id="searchInput" type="search" placeholder="Search users or posts..." style="width: 100%; padding: 12px; border: 1px solid #dbdbdb; border-radius: 20px; font-size: 14px;">
+                    <div id="searchStatus" class="microcopy" style="margin-top: 10px;">Type at least 2 characters to search.</div>
                 </div>
-                <ul id="searchResults" class="stack-list" style="padding: 16px;"></ul>
-                <div id="searchEmpty" class="empty-state" hidden>
-                    <div class="empty-state-icon">🔍</div>
-                    <h3>Search to discover</h3>
-                    <p>Find people and posts</p>
+                <div style="padding: 0 16px 16px; display: grid; gap: 18px;">
+                    <section>
+                        <h3 style="margin: 0 0 12px;">People</h3>
+                        <div id="userSearchResults" class="stack-list compact-list"></div>
+                    </section>
+                    <section>
+                        <h3 style="margin: 0 0 12px;">Posts</h3>
+                        <div id="postSearchResults" class="stack-list compact-list"></div>
+                    </section>
                 </div>
             </section>
 
             <!-- Messages View -->
             <section id="messagesView" class="view" hidden>
-                <div class="view-intro">
-                    <h2>Messages</h2>
-                    <p>Direct messages with your connections</p>
+                <div class="view-intro" style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+                    <div>
+                        <h2>Messages</h2>
+                        <p>Direct messages with your connections</p>
+                    </div>
+                    <button id="messagesRefresh" class="ghost-button compact" type="button">Refresh</button>
                 </div>
-                <div id="messagesEmpty" class="empty-state">
-                    <div class="empty-state-icon">💬</div>
-                    <h3>Messages</h3>
-                    <p id="messagesEmptyText">Your messages will appear here</p>
+                <div style="padding: 0 16px 16px; display:grid; gap:16px;">
+                    <div id="conversationList" class="stack-list compact-list"></div>
+                    <div class="modal-card" style="padding: 16px;">
+                        <div id="chatHeader" class="panel-header" style="margin-bottom: 12px;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <button id="chatBackButton" class="ghost-button compact" type="button" hidden>Back</button>
+                                <h3 style="margin: 0;">Choose a chat</h3>
+                            </div>
+                        </div>
+                        <div id="messageThread" class="message-thread empty-thread">
+                            <p>Select a conversation or start one from Search or Profile.</p>
+                        </div>
+                        <form id="messageComposer" class="message-composer" hidden style="margin-top: 16px;">
+                            <input id="messageInput" type="text" maxlength="1000" placeholder="Write a message" autocomplete="off">
+                            <button class="primary-button" type="submit">Send</button>
+                        </form>
+                    </div>
                 </div>
             </section>
 
             <!-- Notifications View -->
             <section id="notificationsView" class="view" hidden>
-                <div class="view-intro">
-                    <h2>Notifications</h2>
-                    <p>Your activity updates</p>
+                <div class="view-intro" style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+                    <div>
+                        <h2>Notifications</h2>
+                        <p>Your activity updates</p>
+                    </div>
+                    <button id="markAllNotifications" class="ghost-button compact" type="button">Mark all read</button>
                 </div>
                 <ul id="notificationsList" class="stack-list"></ul>
                 <div id="notificationsEmpty" class="empty-state" hidden>
@@ -2401,13 +2426,15 @@
 
             <!-- Profile View -->
             <section id="profileView" class="view" hidden>
-                <div id="profileContent" style="padding: 16px;">
-                    <div id="profileEmpty" class="empty-state">
-                        <div class="empty-state-icon">👤</div>
-                        <h3>Profile</h3>
-                        <p>Your profile information appears here</p>
+                <div class="view-intro" style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+                    <div>
+                        <h2>Profile</h2>
+                        <p>Your account and posts</p>
                     </div>
+                    <button id="profileRefresh" class="ghost-button compact" type="button">Refresh</button>
                 </div>
+                <div id="profileSummary" style="padding: 0 16px 16px;"></div>
+                <div id="profileGrid" class="stack-list compact-list" style="padding: 0 16px 16px;"></div>
             </section>
         </main>
 
@@ -2438,6 +2465,34 @@
                 <span>Profile</span>
             </button>
         </nav>
+    </div>
+
+    <div id="profileEditModal" class="modal-shell" hidden>
+        <div class="modal-card">
+            <div class="panel-header">
+                <h3>Edit Profile</h3>
+                <button data-close-modal="profileEditModal" class="ghost-button compact" type="button">Close</button>
+            </div>
+            <form id="profileEditForm" class="form-stack">
+                <label>
+                    Bio
+                    <textarea id="profileBioInput" maxlength="160" rows="4" placeholder="Tell people something about you"></textarea>
+                </label>
+                <label>
+                    Profile image
+                    <input id="profileImageInput" type="file" accept="image/png,image/jpeg,image/webp">
+                </label>
+                <div id="profileImagePreview" hidden></div>
+                <label style="display:flex; align-items:center; gap:8px;">
+                    <input id="removeProfileImage" type="checkbox">
+                    Remove current image
+                </label>
+                <div class="form-actions">
+                    <button type="button" data-close-modal="profileEditModal" class="secondary-button">Cancel</button>
+                    <button type="submit" class="primary-button">Save profile</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Comments -->

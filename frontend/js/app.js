@@ -91,7 +91,7 @@
         if (window.SupabaseAuth) {
             const authResult = await window.SupabaseAuth.init();
             if (authResult.user) {
-                state.session.user = authResult.user;
+                await syncSupabaseSessionState();
                 if (window.SupabaseAuth.isGuestMode()) {
                     state.authState = 'guest';
                 } else {
@@ -100,6 +100,18 @@
             } else {
                 state.authState = null;
             }
+
+            window.SupabaseAuth.onAuthStateChange(async (_event, session) => {
+                if (session?.user) {
+                    await syncSupabaseSessionState();
+                    return;
+                }
+
+                if (!window.SupabaseAuth.isGuestMode()) {
+                    clearSession();
+                    state.authState = null;
+                }
+            });
         } else {
             const storedMode = sessionStorage.getItem(AUTH_STORAGE_KEY) || localStorage.getItem('authMode');
             const legacyGuest = (sessionStorage.getItem('guest') === 'true') || (localStorage.getItem('guest') === 'true');
@@ -129,9 +141,8 @@
                 || hash.startsWith('messages-');
             const isRootPage = window.location.pathname === '/' || window.location.pathname.endsWith('/index.html');
 
-            if (state.session.token && state.authState === 'user') {
+            if (state.session.user && state.authState === 'user') {
                 if (dom.landingPage) dom.landingPage.hidden = true;
-                await hydrateSession();
                 await enterAuthedApp(true);
             } else if (isRootPage) {
                 showAuthView();
@@ -164,7 +175,7 @@
         }
 
         window.addEventListener('hashchange', async () => {
-            if (state.session.token || isGuestMode()) {
+            if (state.session.user || isGuestMode()) {
                 await resolveHashRoute();
             }
         });
@@ -178,6 +189,7 @@
         dom.bottomNav = document.getElementById('bottomNav');
         dom.brandSubtitle = document.getElementById('brandSubtitle');
         dom.topbarAction = document.getElementById('topbarAction');
+        dom.notificationButton = document.getElementById('notificationButton');
         dom.homeView = document.getElementById('homeView');
         dom.homeFeed = document.getElementById('homeFeed');
         dom.homeLoadMore = document.getElementById('homeLoadMore');
@@ -373,7 +385,12 @@
             const result = await window.SupabaseAuth.startGuestSession();
             if (result.success) {
                 state.authState = 'guest';
-                state.session.user = result.user;
+                state.session.user = {
+                    ...result.user,
+                    username: 'guest',
+                    profileImage: DEFAULT_AVATAR,
+                    avatar: DEFAULT_AVATAR,
+                };
                 setAuthMode('guest');
                 
                 if (dom.landingPage) dom.landingPage.hidden = true;
@@ -420,6 +437,7 @@
         document.body.addEventListener('click', handleBodyClick);
 
         dom.topbarAction?.addEventListener('click', handleTopbarAction);
+        dom.notificationButton?.addEventListener('click', () => switchView('notifications'));
         dom.refreshSuggestionsBtn?.addEventListener('click', () => loadFriendSuggestions(true));
         dom.homeLoadMore?.addEventListener('click', () => loadHomeFeed());
         dom.reelsLoadMore?.addEventListener('click', () => loadReels());
@@ -439,9 +457,11 @@
                 openCreateModal();
             }
         });
-        dom.createForm?.addEventListener('submit', handleCreateSubmit);
-        dom.imageInput?.addEventListener('change', handleImageSelection);
-        dom.reelInput?.addEventListener('change', handleReelSelection);
+        if (!window.PostCreator) {
+            dom.createForm?.addEventListener('submit', handleCreateSubmit);
+            dom.imageInput?.addEventListener('change', handleImageSelection);
+            dom.reelInput?.addEventListener('change', handleReelSelection);
+        }
         dom.commentForm?.addEventListener('submit', handleCommentSubmit);
         dom.messageComposer?.addEventListener('submit', handleMessageSubmit);
         dom.searchInput?.addEventListener('input', handleSearchInput);
@@ -515,6 +535,24 @@
         return response;
     }
 
+    async function syncSupabaseSessionState() {
+        if (!window.supabaseClient?.auth) {
+            return null;
+        }
+
+        const { data: { session } = {}, error } = await window.supabaseClient.auth.getSession();
+        if (error || !session?.user) {
+            return null;
+        }
+
+        state.session.token = session.access_token || '';
+        state.session.refreshToken = session.refresh_token || '';
+        state.session.user = await enrichSessionUser(session.user);
+        setAuthMode('user');
+        persistSession();
+        return state.session.user;
+    }
+
     async function enterAuthedApp(useHash) {
         if (dom.appShell) dom.appShell.hidden = false;
         if (dom.bottomNav) dom.bottomNav.hidden = false;
@@ -576,7 +614,7 @@
 
     async function switchView(viewName) {
         // Allow access if token OR guest exists, redirect only if BOTH are missing
-        if (!state.session.token && !isGuestMode()) {
+        if (!state.session.user && !isGuestMode()) {
             showAuthView();
             return;
         }
@@ -622,8 +660,13 @@
         }
 
         if (viewName === 'profile') {
-            const username = state.profile.username || state.session.user.username;
-            await loadProfile(username);
+            const username = state.profile.username || state.session.user?.username;
+            if (isGuestMode() && (!username || username === 'guest')) {
+                dom.profileSummary.innerHTML = '<div class="empty-state">Guest mode has no personal profile. Open a creator profile from the feed or log in to manage your own account.</div>';
+                dom.profileGrid.innerHTML = '';
+            } else {
+                await loadProfile(username);
+            }
         }
     }
 
@@ -831,11 +874,7 @@
                 return;
             }
 
-            const session = window.supabaseClient ? (await window.supabaseClient.auth.getSession()).data?.session : null;
-            state.session.user = result.user;
-            state.session.token = session?.access_token || '';
-            state.session.refreshToken = session?.refresh_token || '';
-            storeSession({ token: state.session.token, refreshToken: state.session.refreshToken, user: result.user });
+            await syncSupabaseSessionState();
             await enterAuthedApp(true);
             showToast('Welcome back.', 'success');
         } catch (error) {
@@ -2813,7 +2852,1050 @@
         }
     }
 
+    function getSupabaseClientOrThrow() {
+        const client = window.supabaseClient || (window.supabase?.auth ? window.supabase : null);
+        if (!client) {
+            throw new Error('Supabase client is unavailable.');
+        }
+        return client;
+    }
+
+    function requireAuthenticatedUserRecord() {
+        if (!state.session.user?.id || isGuestMode()) {
+            throw new Error('Authentication required');
+        }
+        return state.session.user;
+    }
+
+    async function fetchProfileById(userId) {
+        if (!userId) {
+            return null;
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('profiles')
+            .select('id, username, display_name, bio, avatar_url')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        return data || null;
+    }
+
+    async function fetchProfileByUsername(username) {
+        if (!username) {
+            return null;
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('profiles')
+            .select('id, username, display_name, bio, avatar_url')
+            .eq('username', username)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        return data || null;
+    }
+
+    async function enrichSessionUser(authUser) {
+        if (!authUser?.id) {
+            return null;
+        }
+
+        let profile = null;
+        try {
+            profile = await fetchProfileById(authUser.id);
+        } catch (_) {
+            profile = null;
+        }
+
+        const username = profile?.username
+            || authUser.user_metadata?.username
+            || authUser.email?.split('@')[0]
+            || `user_${String(authUser.id).slice(0, 8)}`;
+        const profileImage = profile?.avatar_url || authUser.user_metadata?.avatar_url || DEFAULT_AVATAR;
+
+        return {
+            id: authUser.id,
+            email: authUser.email || '',
+            username,
+            displayName: profile?.display_name || authUser.user_metadata?.display_name || username,
+            bio: profile?.bio || '',
+            profileImage,
+            avatar: profileImage,
+            user_metadata: authUser.user_metadata || {},
+        };
+    }
+
+    async function fetchPostInteractionState(postIds) {
+        if (!Array.isArray(postIds) || !postIds.length || !state.session.user?.id || isGuestMode()) {
+            return { likedIds: new Set(), reactionMap: {} };
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const [likesResult, reactionsResult] = await Promise.all([
+            client.from('likes').select('post_id').eq('user_id', state.session.user.id).in('post_id', postIds),
+            client.from('post_reactions_v2').select('post_id, reaction_type').eq('user_id', state.session.user.id).in('post_id', postIds),
+        ]);
+
+        if (likesResult.error) {
+            throw likesResult.error;
+        }
+
+        if (reactionsResult.error) {
+            throw reactionsResult.error;
+        }
+
+        const likedIds = new Set((likesResult.data || []).map((row) => row.post_id));
+        const reactionMap = {};
+        (reactionsResult.data || []).forEach((row) => {
+            reactionMap[row.post_id] = row.reaction_type;
+        });
+
+        return { likedIds, reactionMap };
+    }
+
+    function normalizeSupabasePostRow(post, interactionState) {
+        const likedIds = interactionState?.likedIds || new Set();
+        const reactionMap = interactionState?.reactionMap || {};
+        const text = post?.content || post?.caption || '';
+        const likeCount = Number(post?.likes?.[0]?.count || 0);
+        const commentCount = Number(post?.comments?.[0]?.count || 0);
+        const profile = post?.profiles || {};
+
+        return {
+            id: post.id,
+            type: post.type || (post.media_url ? 'reel' : post.image_url ? 'image' : 'text'),
+            category: post.category || '',
+            text,
+            caption: post.caption || text,
+            imageData: post.image_url || '',
+            videoData: post.media_url || '',
+            createdAt: post.created_at,
+            timestamp: post.created_at,
+            likeCount,
+            likes: likeCount,
+            commentCount,
+            comments: commentCount,
+            isLiked: likedIds.has(post.id),
+            liked: likedIds.has(post.id),
+            isSaved: false,
+            reactionType: reactionMap[post.id] || '',
+            author: {
+                id: profile.id || post.user_id,
+                username: profile.username || 'member',
+                profileImage: profile.avatar_url || DEFAULT_AVATAR,
+                avatar: profile.avatar_url || DEFAULT_AVATAR,
+            },
+        };
+    }
+
+    async function fetchFeedPosts(options = {}) {
+        const client = getSupabaseClientOrThrow();
+        const limit = Number(options.limit || 8);
+        let query = client
+            .from('posts')
+            .select(`
+                id,
+                user_id,
+                type,
+                category,
+                caption,
+                content,
+                image_url,
+                media_url,
+                created_at,
+                profiles (id, username, avatar_url),
+                likes:likes(count),
+                comments:comments(count)
+            `)
+            .order('created_at', { ascending: false })
+            .limit(limit + 1);
+
+        if (options.cursor) {
+            query = query.lt('created_at', options.cursor);
+        }
+
+        if (options.type === 'reel') {
+            query = query.eq('type', 'reel');
+        }
+
+        const { data, error } = await query;
+        if (error) {
+            throw error;
+        }
+
+        let rows = data || [];
+        const hasMore = rows.length > limit;
+        if (hasMore) {
+            rows = rows.slice(0, limit);
+        }
+
+        const interactionState = await fetchPostInteractionState(rows.map((row) => row.id));
+        let posts = rows.map((row) => normalizeSupabasePostRow(row, interactionState));
+
+        if (options.mood && options.mood !== 'mixed') {
+            posts = filterFeedPosts(posts, options.mood);
+        }
+
+        return {
+            posts,
+            nextCursor: rows.length ? rows[rows.length - 1].created_at : null,
+            hasMore,
+        };
+    }
+
+    async function buildProfilePayload(profile) {
+        const client = getSupabaseClientOrThrow();
+        const viewerId = state.session.user?.id || null;
+        const [
+            postsResult,
+            followersResult,
+            followingResult,
+            followStateResult,
+        ] = await Promise.all([
+            client.from('posts').select('id, type').eq('user_id', profile.id),
+            client.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', profile.id),
+            client.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', profile.id),
+            viewerId && viewerId !== profile.id
+                ? client.from('follows').select('id').eq('follower_id', viewerId).eq('following_id', profile.id).limit(1)
+                : Promise.resolve({ data: [], error: null }),
+        ]);
+
+        if (postsResult.error) {
+            throw postsResult.error;
+        }
+
+        if (followersResult.error) {
+            throw followersResult.error;
+        }
+
+        if (followingResult.error) {
+            throw followingResult.error;
+        }
+
+        if (followStateResult.error) {
+            throw followStateResult.error;
+        }
+
+        const posts = postsResult.data || [];
+
+        return {
+            id: profile.id,
+            username: profile.username,
+            bio: profile.bio || '',
+            profileImage: profile.avatar_url || DEFAULT_AVATAR,
+            displayName: profile.display_name || profile.username,
+            postCount: posts.length,
+            reelCount: posts.filter((post) => post.type === 'reel').length,
+            followerCount: followersResult.count || 0,
+            followingCount: followingResult.count || 0,
+            isOwnProfile: viewerId === profile.id,
+            isFollowing: Boolean(followStateResult.data?.length),
+        };
+    }
+
+    async function fetchPostsByUsername(username) {
+        const profile = await fetchProfileByUsername(username);
+        if (!profile) {
+            return [];
+        }
+
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('posts')
+            .select(`
+                id,
+                user_id,
+                type,
+                category,
+                caption,
+                content,
+                image_url,
+                media_url,
+                created_at,
+                profiles (id, username, avatar_url),
+                likes:likes(count),
+                comments:comments(count)
+            `)
+            .eq('user_id', profile.id)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            throw error;
+        }
+
+        const interactionState = await fetchPostInteractionState((data || []).map((row) => row.id));
+        return (data || []).map((row) => normalizeSupabasePostRow(row, interactionState));
+    }
+
+    async function fetchConversationList() {
+        const user = requireAuthenticatedUserRecord();
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('messages')
+            .select('id, sender_id, receiver_id, body, read_at, created_at')
+            .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+            .order('created_at', { ascending: false })
+            .limit(200);
+
+        if (error) {
+            throw error;
+        }
+
+        const grouped = new Map();
+        const otherIds = new Set();
+
+        (data || []).forEach((message) => {
+            const otherUserId = message.sender_id === user.id ? message.receiver_id : message.sender_id;
+            otherIds.add(otherUserId);
+
+            if (!grouped.has(otherUserId)) {
+                grouped.set(otherUserId, {
+                    userId: otherUserId,
+                    lastMessage: {
+                        text: message.body,
+                        createdAt: message.created_at,
+                    },
+                    unreadCount: message.receiver_id === user.id && !message.read_at ? 1 : 0,
+                });
+                return;
+            }
+
+            if (message.receiver_id === user.id && !message.read_at) {
+                grouped.get(otherUserId).unreadCount += 1;
+            }
+        });
+
+        let profilesById = new Map();
+        if (otherIds.size) {
+            const { data: profiles, error: profilesError } = await client
+                .from('profiles')
+                .select('id, username, avatar_url')
+                .in('id', [...otherIds]);
+
+            if (profilesError) {
+                throw profilesError;
+            }
+
+            profilesById = new Map((profiles || []).map((profile) => [profile.id, profile]));
+        }
+
+        return [...grouped.values()].map((conversation) => {
+            const profile = profilesById.get(conversation.userId);
+            return {
+                user: {
+                    id: conversation.userId,
+                    username: profile?.username || 'member',
+                    profileImage: profile?.avatar_url || DEFAULT_AVATAR,
+                },
+                lastMessage: conversation.lastMessage,
+                unreadCount: conversation.unreadCount,
+            };
+        });
+    }
+
+    async function fetchConversationMessages(otherUserId) {
+        const user = requireAuthenticatedUserRecord();
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('messages')
+            .select('id, sender_id, receiver_id, body, read_at, created_at')
+            .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
+            .order('created_at', { ascending: true })
+            .limit(200);
+
+        if (error) {
+            throw error;
+        }
+
+        await client
+            .from('messages')
+            .update({ read_at: new Date().toISOString() })
+            .eq('sender_id', otherUserId)
+            .eq('receiver_id', user.id)
+            .is('read_at', null);
+
+        return (data || []).map((message) => ({
+            id: message.id,
+            senderId: message.sender_id,
+            receiverId: message.receiver_id,
+            text: message.body,
+            createdAt: message.created_at,
+            readAt: message.read_at,
+        }));
+    }
+
+    async function fetchCommentsForPost(postId) {
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('comments')
+            .select('id, body, created_at, user_id, profiles (id, username, avatar_url)')
+            .eq('post_id', postId)
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            throw error;
+        }
+
+        return (data || []).map((comment) => ({
+            id: comment.id,
+            text: comment.body,
+            createdAt: comment.created_at,
+            author: {
+                id: comment.profiles?.id || comment.user_id,
+                username: comment.profiles?.username || 'member',
+                profileImage: comment.profiles?.avatar_url || DEFAULT_AVATAR,
+            },
+        }));
+    }
+
+    async function fetchSupabaseUserById(userId) {
+        const client = getSupabaseClientOrThrow();
+        const { data, error } = await client
+            .from('profiles')
+            .select('id, username, bio, avatar_url')
+            .eq('id', userId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        if (!data) {
+            return null;
+        }
+
+        return {
+            id: data.id,
+            username: data.username,
+            bio: data.bio || '',
+            profileImage: data.avatar_url || DEFAULT_AVATAR,
+        };
+    }
+
+    async function apiRequest(path, options) {
+        const settings = options || {};
+        const client = getSupabaseClientOrThrow();
+        const method = String(settings.method || 'GET').toUpperCase();
+        const requestUrl = new URL(path, window.location.origin);
+        const pathname = requestUrl.pathname;
+
+        if (pathname === '/auth/me' && method === 'GET') {
+            const user = await syncSupabaseSessionState();
+            if (!user) {
+                throw new Error('Authentication required');
+            }
+            return { success: true, user };
+        }
+
+        if (pathname === '/auth/logout' && method === 'POST') {
+            if (window.SupabaseAuth) {
+                await window.SupabaseAuth.logout();
+            }
+            return { success: true };
+        }
+
+        if (pathname === '/users/suggestions' && method === 'GET') {
+            let query = client
+                .from('profiles')
+                .select('id, username, bio, avatar_url')
+                .order('created_at', { ascending: false })
+                .limit(6);
+
+            if (state.session.user?.id && !isGuestMode()) {
+                query = query.neq('id', state.session.user.id);
+            }
+
+            const { data, error } = await query;
+            if (error) {
+                throw error;
+            }
+
+            let followingIds = new Set();
+            if (state.session.user?.id && !isGuestMode() && data?.length) {
+                const { data: follows, error: followsError } = await client
+                    .from('follows')
+                    .select('following_id')
+                    .eq('follower_id', state.session.user.id)
+                    .in('following_id', data.map((profile) => profile.id));
+
+                if (followsError) {
+                    throw followsError;
+                }
+
+                followingIds = new Set((follows || []).map((row) => row.following_id));
+            }
+
+            return {
+                suggestions: (data || []).map((profile) => ({
+                    id: profile.id,
+                    username: profile.username,
+                    profileImage: profile.avatar_url || DEFAULT_AVATAR,
+                    avatar: profile.avatar_url || DEFAULT_AVATAR,
+                    bio: profile.bio || 'A thoughtful person worth connecting with.',
+                    mutuals: 0,
+                    following: followingIds.has(profile.id),
+                })),
+            };
+        }
+
+        if (pathname === '/stories' && method === 'GET') {
+            const limit = Number(requestUrl.searchParams.get('limit') || 10);
+            const { data, error } = await client
+                .from('stories')
+                    .select('id, media_url, type, created_at, profiles (username, avatar_url)')
+                .limit(limit);
+
+            if (error) {
+                throw error;
+            }
+
+            return {
+                stories: (data || []).map((story) => ({
+                    id: story.id,
+                    username: story.profiles?.username || 'instaJOY',
+                    avatar: story.profiles?.avatar_url || DEFAULT_AVATAR,
+                    thumb: story.profiles?.avatar_url || DEFAULT_AVATAR,
+                    video: story.media_url,
+                    timestamp: story.created_at,
+                })),
+            };
+        }
+
+        if (pathname === '/posts/feed' && method === 'GET') {
+            return fetchFeedPosts({
+                limit: Number(requestUrl.searchParams.get('limit') || 8),
+                cursor: requestUrl.searchParams.get('cursor'),
+                mood: requestUrl.searchParams.get('mood') || state.home.mood,
+            });
+        }
+
+        if (pathname === '/reels/feed' && method === 'GET') {
+            return fetchFeedPosts({
+                type: 'reel',
+                limit: Number(requestUrl.searchParams.get('limit') || 4),
+                cursor: requestUrl.searchParams.get('cursor'),
+            }).then((result) => ({
+                reels: result.posts.map((post) => ({
+                    ...post,
+                    caption: post.caption || post.text,
+                })),
+                nextCursor: result.nextCursor,
+                hasMore: result.hasMore,
+            }));
+        }
+
+        if (pathname === '/messages/conversations' && method === 'GET') {
+            return { conversations: await fetchConversationList() };
+        }
+
+        const messagesMatch = pathname.match(/^\/messages\/([^/]+)$/);
+        if (messagesMatch && method === 'GET') {
+            return { messages: await fetchConversationMessages(messagesMatch[1]) };
+        }
+
+        if (pathname === '/messages' && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const receiverId = String(settings.body?.receiverId || '').trim();
+            const text = String(settings.body?.text || '').trim();
+            if (!receiverId || !text) {
+                throw new Error('Message text is required.');
+            }
+
+            const { data, error } = await client
+                .from('messages')
+                .insert({
+                    sender_id: user.id,
+                    receiver_id: receiverId,
+                    body: text,
+                })
+                .select('id, sender_id, receiver_id, body, read_at, created_at')
+                .single();
+
+            if (error) {
+                throw error;
+            }
+
+            return {
+                message: {
+                    id: data.id,
+                    senderId: data.sender_id,
+                    receiverId: data.receiver_id,
+                    text: data.body,
+                    createdAt: data.created_at,
+                    readAt: data.read_at,
+                },
+            };
+        }
+
+        if (pathname === '/notifications' && method === 'GET') {
+            if (!state.session.user?.id || isGuestMode()) {
+                return { notifications: [] };
+            }
+
+            const user = requireAuthenticatedUserRecord();
+            const { data, error } = await client
+                .from('notifications')
+                .select('id, actor_id, type, entity_type, entity_id, message, read, created_at')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(30);
+
+            if (error) {
+                throw error;
+            }
+
+            const actorIds = [...new Set((data || []).map((note) => note.actor_id).filter(Boolean))];
+            let actorMap = new Map();
+            if (actorIds.length) {
+                const { data: actors, error: actorsError } = await client
+                    .from('profiles')
+                    .select('id, username, avatar_url')
+                    .in('id', actorIds);
+
+                if (actorsError) {
+                    throw actorsError;
+                }
+
+                actorMap = new Map((actors || []).map((actor) => [actor.id, actor]));
+            }
+
+            return {
+                notifications: (data || []).map((note) => ({
+                    id: note.id,
+                    type: note.type,
+                    entityType: note.entity_type,
+                    entityId: note.entity_id,
+                    text: note.message,
+                    createdAt: note.created_at,
+                    readAt: note.read ? note.created_at : null,
+                    actor: actorMap.get(note.actor_id) ? {
+                        username: actorMap.get(note.actor_id).username,
+                        profileImage: actorMap.get(note.actor_id).avatar_url || DEFAULT_AVATAR,
+                    } : null,
+                })),
+            };
+        }
+
+        if (pathname === '/notifications/read-all' && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const { error } = await client
+                .from('notifications')
+                .update({ read: true })
+                .eq('user_id', user.id)
+                .eq('read', false);
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        if (pathname === '/users/me/profile' && method === 'GET') {
+            const user = requireAuthenticatedUserRecord();
+            const profile = await fetchProfileById(user.id);
+            if (!profile) {
+                throw new Error('Profile not found');
+            }
+            return { profile: await buildProfilePayload(profile) };
+        }
+
+        if (pathname === '/users/me/profile' && method === 'PATCH') {
+            const user = requireAuthenticatedUserRecord();
+            const existingProfile = await fetchProfileById(user.id);
+            if (!existingProfile) {
+                throw new Error('Profile not found');
+            }
+
+            const bio = String(settings.body?.bio || '').trim().slice(0, 160);
+            const avatarUrl = settings.body?.removeProfileImage
+                ? null
+                : settings.body?.profileImage || existingProfile.avatar_url || null;
+
+            const { error } = await client
+                .from('profiles')
+                .update({
+                    bio,
+                    avatar_url: avatarUrl,
+                })
+                .eq('id', user.id);
+
+            if (error) {
+                throw error;
+            }
+
+            state.session.user = {
+                ...state.session.user,
+                bio,
+                profileImage: avatarUrl || DEFAULT_AVATAR,
+                avatar: avatarUrl || DEFAULT_AVATAR,
+            };
+            persistSession();
+            return { success: true };
+        }
+
+        if (pathname.startsWith('/users/') && method === 'GET') {
+            const username = decodeURIComponent(pathname.replace('/users/', ''));
+            const profile = await fetchProfileByUsername(username);
+            if (!profile) {
+                throw new Error('Profile not found');
+            }
+            return { profile: await buildProfilePayload(profile) };
+        }
+
+        if (pathname.startsWith('/posts/user/') && method === 'GET') {
+            const username = decodeURIComponent(pathname.replace('/posts/user/', ''));
+            return { posts: await fetchPostsByUsername(username) };
+        }
+
+        if (pathname === '/search' && method === 'GET') {
+            const query = String(requestUrl.searchParams.get('q') || '').trim();
+            const [profilesResult, postsResult] = await Promise.all([
+                client.from('profiles').select('id, username, bio, avatar_url').ilike('username', `%${query}%`).limit(12),
+                client
+                    .from('posts')
+                    .select(`
+                        id,
+                        user_id,
+                        type,
+                        category,
+                        caption,
+                        content,
+                        image_url,
+                        media_url,
+                        created_at,
+                        profiles (id, username, avatar_url),
+                        likes:likes(count),
+                        comments:comments(count)
+                    `)
+                    .or(`caption.ilike.%${query}%,content.ilike.%${query}%`)
+                    .order('created_at', { ascending: false })
+                    .limit(12),
+            ]);
+
+            if (profilesResult.error) {
+                throw profilesResult.error;
+            }
+
+            if (postsResult.error) {
+                throw postsResult.error;
+            }
+
+            const posts = postsResult.data || [];
+            const interactionState = await fetchPostInteractionState(posts.map((row) => row.id));
+
+            return {
+                users: (profilesResult.data || []).map((profile) => ({
+                    id: profile.id,
+                    username: profile.username,
+                    bio: profile.bio || '',
+                    profileImage: profile.avatar_url || DEFAULT_AVATAR,
+                })),
+                posts: posts.map((row) => normalizeSupabasePostRow(row, interactionState)),
+            };
+        }
+
+        if (pathname === '/posts' && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const type = settings.body?.type === 'image' ? 'image' : 'text';
+            const text = String(settings.body?.text || '').trim();
+            const payload = {
+                user_id: user.id,
+                type,
+                category: settings.body?.category || null,
+                caption: text || null,
+                content: text || null,
+                image_url: type === 'image' ? settings.body?.imageData || null : null,
+            };
+
+            const { data, error } = await client
+                .from('posts')
+                .insert(payload)
+                .select(`
+                    id,
+                    user_id,
+                    type,
+                    category,
+                    caption,
+                    content,
+                    image_url,
+                    media_url,
+                    created_at,
+                    profiles (id, username, avatar_url),
+                    likes:likes(count),
+                    comments:comments(count)
+                `)
+                .single();
+
+            if (error) {
+                throw error;
+            }
+
+            return { post: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+        }
+
+        if (pathname === '/reels' && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const { data, error } = await client
+                .from('posts')
+                .insert({
+                    user_id: user.id,
+                    type: 'reel',
+                    caption: String(settings.body?.caption || '').trim() || null,
+                    content: String(settings.body?.caption || '').trim() || null,
+                    media_url: settings.body?.videoData || null,
+                })
+                .select(`
+                    id,
+                    user_id,
+                    type,
+                    category,
+                    caption,
+                    content,
+                    image_url,
+                    media_url,
+                    created_at,
+                    profiles (id, username, avatar_url),
+                    likes:likes(count),
+                    comments:comments(count)
+                `)
+                .single();
+
+            if (error) {
+                throw error;
+            }
+
+            return { reel: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+        }
+
+        const postCommentsMatch = pathname.match(/^\/(posts|reels)\/([^/]+)\/comments$/);
+        if (postCommentsMatch && method === 'GET') {
+            return { comments: await fetchCommentsForPost(postCommentsMatch[2]) };
+        }
+
+        if (postCommentsMatch && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const text = String(settings.body?.text || '').trim();
+            if (!text) {
+                throw new Error('Comment text is required.');
+            }
+
+            const { error } = await client.from('comments').insert({
+                user_id: user.id,
+                post_id: postCommentsMatch[2],
+                body: text,
+            });
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        const likeMatch = pathname.match(/^\/(posts|reels)\/([^/]+)\/like$/);
+        if (likeMatch && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const { error } = await client.from('likes').insert({
+                user_id: user.id,
+                post_id: likeMatch[2],
+            });
+
+            if (error && error.code !== '23505') {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        if (likeMatch && method === 'DELETE') {
+            const user = requireAuthenticatedUserRecord();
+            const { error } = await client
+                .from('likes')
+                .delete()
+                .match({ user_id: user.id, post_id: likeMatch[2] });
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        const reactionMatch = pathname.match(/^\/posts\/([^/]+)\/reaction$/);
+        if (reactionMatch && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const reactionType = String(settings.body?.reactionType || '').trim();
+            if (!reactionType) {
+                throw new Error('Reaction type is required.');
+            }
+
+            const { error } = await client.from('post_reactions_v2').upsert(
+                {
+                    post_id: reactionMatch[1],
+                    user_id: user.id,
+                    reaction_type: reactionType,
+                },
+                { onConflict: 'post_id,user_id' }
+            );
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        const saveMatch = pathname.match(/^\/posts\/([^/]+)\/save$/);
+        if (saveMatch && (method === 'POST' || method === 'DELETE')) {
+            return { success: true };
+        }
+
+        const followsMatch = pathname.match(/^\/follows\/([^/]+)$/);
+        if (followsMatch && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const { error } = await client.from('follows').insert({
+                follower_id: user.id,
+                following_id: followsMatch[1],
+            });
+
+            if (error && error.code !== '23505') {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        if (followsMatch && method === 'DELETE') {
+            const user = requireAuthenticatedUserRecord();
+            const { error } = await client
+                .from('follows')
+                .delete()
+                .match({ follower_id: user.id, following_id: followsMatch[1] });
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        const postMatch = pathname.match(/^\/posts\/([^/]+)$/);
+        if (postMatch && method === 'GET') {
+            const { posts } = await fetchFeedPosts({ limit: 50 });
+            const post = posts.find((item) => item.id === postMatch[1]);
+            if (post) {
+                return { post };
+            }
+
+            const { data, error } = await client
+                .from('posts')
+                .select(`
+                    id,
+                    user_id,
+                    type,
+                    category,
+                    caption,
+                    content,
+                    image_url,
+                    media_url,
+                    created_at,
+                    profiles (id, username, avatar_url),
+                    likes:likes(count),
+                    comments:comments(count)
+                `)
+                .eq('id', postMatch[1])
+                .single();
+
+            if (error) {
+                throw error;
+            }
+
+            return { post: normalizeSupabasePostRow(data, await fetchPostInteractionState([data.id])) };
+        }
+
+        if (postMatch && method === 'DELETE') {
+            const user = requireAuthenticatedUserRecord();
+            const { error } = await client
+                .from('posts')
+                .delete()
+                .match({ id: postMatch[1], user_id: user.id });
+
+            if (error) {
+                throw error;
+            }
+
+            return { success: true };
+        }
+
+        throw new Error(`Unsupported request: ${method} ${pathname}`);
+    }
+
+    async function refreshAccessToken() {
+        const user = await syncSupabaseSessionState();
+        return Boolean(user);
+    }
+
+    async function findUserById(userId) {
+        const existingConversation = state.messages.conversations.find((item) => item.user.id === userId);
+        if (existingConversation) {
+            return existingConversation.user;
+        }
+
+        if (state.profile.data && state.profile.data.id === userId) {
+            return state.profile.data;
+        }
+
+        return fetchSupabaseUserById(userId);
+    }
+
+    async function handleSignup(event) {
+        event.preventDefault();
+
+        const username = document.getElementById('signupUsername').value.trim().toLowerCase();
+        const email = document.getElementById('signupEmail').value.trim();
+        const password = document.getElementById('signupPassword').value;
+
+        if (!window.SupabaseAuth) {
+            showToast('Authentication is unavailable. Please refresh the page.', 'error');
+            return;
+        }
+
+        try {
+            const result = await window.SupabaseAuth.signup(email, password, username);
+            if (!result.success) {
+                showToast(result.error || 'Signup failed. Please try again.', 'error');
+                return;
+            }
+
+            const syncedUser = await syncSupabaseSessionState();
+            if (!syncedUser) {
+                showToast('Account created. Check your email to confirm the account, then log in.', 'success');
+                showAuthView('login');
+                return;
+            }
+
+            await enterAuthedApp(true);
+            showToast('Account ready. Let\'s share something joyful.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Signup failed', 'error');
+        }
+    }
+
     function showToast(message, variant) {
+        if (!dom.toastHost) {
+            return;
+        }
         const toast = document.createElement('div');
         toast.className = `toast ${variant || ''}`.trim();
         toast.textContent = message;
@@ -2823,6 +3905,16 @@
             toast.remove();
         }, 3200);
     }
+
+    window.showToast = showToast;
+    window.app = {
+        loadHomeFeed,
+        loadReels,
+        onNewPost() {
+            loadHomeFeed(true).catch(() => {});
+            loadReels(true).catch(() => {});
+        },
+    };
 
     function getAvatar(value) {
         return value || DEFAULT_AVATAR;

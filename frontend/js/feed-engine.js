@@ -80,7 +80,7 @@
           allow_likes,
           created_at,
           updated_at,
-          profiles:user_id (
+          profiles (
             id,
             username,
             display_name,
@@ -144,7 +144,7 @@
           hashtags,
           location,
           created_at,
-          profiles:user_id (
+          profiles (
             id,
             username,
             display_name,
@@ -365,7 +365,7 @@
           content,
           created_at,
           user_id,
-          profiles:user_id (
+          profiles (
             username,
             avatar_url
           )
@@ -447,7 +447,7 @@
           content,
           hashtags,
           created_at,
-          profiles:user_id (
+          profiles (
             username,
             avatar_url
           )
@@ -496,7 +496,7 @@
           content,
           caption,
           created_at,
-          profiles:user_id (username, avatar_url),
+          profiles (username, avatar_url),
           likes:likes(count)
         `)
         .gte('created_at', sevenDaysAgo.toISOString())

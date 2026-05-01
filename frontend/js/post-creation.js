@@ -6,7 +6,7 @@
 (function initPostCreation() {
   const config = window.INSTAJOY_CONFIG || {};
   const MAX_IMAGE_BYTES = 200 * 1024;
-  const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+  const MAX_VIDEO_BYTES = 1024 * 1024;
   const MAX_VIDEO_DURATION = 30;
   const MAX_CAROUSEL_PHOTOS = 10;
 
@@ -302,6 +302,9 @@
         if (window.app && typeof window.app.loadHomeFeed === 'function') {
           await window.app.loadHomeFeed(true);
         }
+        if (window.app && typeof window.app.loadReels === 'function') {
+          await window.app.loadReels(true);
+        }
       } catch (error) {
         this.showError(error.message || 'Failed to publish post');
       } finally {
@@ -341,21 +344,15 @@
 
     buildPostObject() {
       const user = window.SupabaseAuth?.getUser() || { id: 'guest' };
-      const type = this.state.postType;
+      const selectedType = this.state.postType;
+      const type = selectedType === 'video' ? 'reel' : selectedType === 'text' ? 'text' : 'image';
 
       const post = {
         user_id: user.id,
         type: type,
-        category: this.dom.postCategory?.value || null,
+        category: type === 'text' ? (this.dom.postCategory?.value || null) : null,
         caption: this.getCaption(),
-        content: type === 'text' ? this.dom.postContent.value : null,
-        hashtags: this.dom.hashtags?.value || '',
-        location: this.dom.location?.value || '',
-        privacy: this.dom.privacy?.value || 'friends',
-        allow_comments: this.dom.allowComments?.checked || true,
-        allow_likes: this.dom.allowLikes?.checked || true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        content: type === 'text' ? this.dom.postContent.value.trim() : null
       };
 
       return post;
@@ -376,13 +373,14 @@
       this.dom.uploadProgress.hidden = false;
 
       // Upload based on type
-      if (post.type === 'photo' && this.state.currentFiles.photo) {
+      if (this.state.postType === 'photo' && this.state.currentFiles.photo) {
         const urls = await this.uploadPhotos([this.state.currentFiles.photo]);
         post.image_url = urls[0];
-      } else if (post.type === 'carousel' && this.state.currentFiles.carousel.length > 0) {
+      } else if (this.state.postType === 'carousel' && this.state.currentFiles.carousel.length > 0) {
         const urls = await this.uploadPhotos(this.state.currentFiles.carousel);
         post.carousel_urls = urls;
-      } else if (post.type === 'video' && this.state.currentFiles.video) {
+        post.image_url = urls[0] || null;
+      } else if (this.state.postType === 'video' && this.state.currentFiles.video) {
         const url = await this.uploadVideo(this.state.currentFiles.video);
         post.media_url = url;
       }
@@ -397,20 +395,20 @@
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const path = `posts/${user?.id}/${Date.now()}_${i}.jpg`;
+        const path = `${user?.id}/posts/${Date.now()}_${i}.jpg`;
 
         // Compress image
         const compressed = await this.compressImage(file);
 
         const { data, error } = await supabase.storage
-          .from('media')
+          .from('post-images')
           .upload(path, compressed, { upsert: true });
 
         if (error) throw error;
 
         // Get public URL
         const { data: { publicUrl } } = supabase.storage
-          .from('media')
+          .from('post-images')
           .getPublicUrl(path);
 
         urls.push(publicUrl);
@@ -426,16 +424,16 @@
     async uploadVideo(file) {
       const supabase = window.supabaseClient;
       const user = window.SupabaseAuth?.getUser();
-      const path = `reels/${user?.id}/${Date.now()}.mp4`;
+      const path = `${user?.id}/reels/${Date.now()}.mp4`;
 
       const { data, error } = await supabase.storage
-        .from('media')
+        .from('reel-videos')
         .upload(path, file, { upsert: true });
 
       if (error) throw error;
 
       const { data: { publicUrl } } = supabase.storage
-        .from('media')
+        .from('reel-videos')
         .getPublicUrl(path);
 
       this.updateProgress(100);
@@ -493,9 +491,19 @@
       }
 
       // Save authenticated posts to Supabase
+      const insertPayload = {
+        user_id: post.user_id,
+        type: post.type,
+        category: post.type === 'text' ? post.category : null,
+        caption: post.caption || (post.type === 'text' ? post.content : '') || null,
+        content: post.type === 'text' ? (post.content || post.caption || '') : null,
+        image_url: post.type === 'image' ? (post.image_url || post.carousel_urls?.[0] || null) : null,
+        media_url: post.type === 'reel' ? (post.media_url || null) : null
+      };
+
       const { data, error } = await supabase
         .from('posts')
-        .insert([post])
+        .insert([insertPayload])
         .select()
         .single();
 

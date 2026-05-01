@@ -100,7 +100,7 @@
 
         if (error) throw error;
         
-        this.currentSession = { user: data.user };
+        this.currentSession = data.session || null;
         this.currentUser = data.user;
         this.isGuest = false;
 
