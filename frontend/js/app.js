@@ -84,6 +84,7 @@
         },
         realtime: {
             publicChannel: null,
+            messagesChannel: null,
             notificationsChannel: null,
             notificationsUserId: null,
             refreshTimer: null,
@@ -552,6 +553,80 @@
         setAuthMode('user');
         persistSession();
         return state.session.user;
+    }
+
+    function getSupabaseRealtimeClient() {
+        return window.supabaseClient || (window.supabase && window.supabase.channel ? window.supabase : null);
+    }
+
+    async function ensureRealtimeSubscriptions() {
+        const supabase = getSupabaseRealtimeClient();
+        const userId = state.session.user?.id;
+        if (!supabase || !supabase.channel || !userId || state.authState !== 'user') {
+            return;
+        }
+
+        if (state.realtime.notificationsUserId === userId) {
+            return;
+        }
+
+        teardownRealtimeSubscriptions();
+
+        try {
+            state.realtime.notificationsChannel = supabase
+                .channel(`instajoy-notifications-${userId}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'notifications',
+                        filter: `user_id=eq.${userId}`,
+                    },
+                    async () => {
+                        if (state.activeView === 'notifications') {
+                            await loadNotifications();
+                        } else {
+                            await syncUnreadNotificationCount();
+                        }
+                    }
+                );
+
+            state.realtime.messagesChannel = supabase
+                .channel(`instajoy-messages-${userId}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'messages',
+                        filter: `receiver_id=eq.${userId}`,
+                    },
+                    async () => {
+                        await loadConversations(true);
+                    }
+                );
+
+            await Promise.all([
+                state.realtime.notificationsChannel.subscribe(),
+                state.realtime.messagesChannel.subscribe(),
+            ]);
+
+            state.realtime.notificationsUserId = userId;
+        } catch (error) {
+            console.warn('Realtime subscriptions unavailable:', error);
+        }
+    }
+
+    function teardownRealtimeSubscriptions() {
+        ['publicChannel', 'messagesChannel', 'notificationsChannel'].forEach((key) => {
+            const channel = state.realtime[key];
+            if (channel && typeof channel.unsubscribe === 'function') {
+                channel.unsubscribe().catch(() => {});
+            }
+            state.realtime[key] = null;
+        });
+        state.realtime.notificationsUserId = null;
     }
 
     async function enterAuthedApp(useHash) {
