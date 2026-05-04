@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <meta name="theme-color" content="#f46a3b">
     <meta name="description" content="instaJOY - Professional Social Media Feed">
     <title>instaJOY - Feed</title>
@@ -2138,6 +2138,207 @@
             transform: none;
             box-shadow: none;
         }
+
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .topbar,
+        .topbar > *,
+        .topbar-actions,
+        .topbar-actions > * {
+            min-width: 0;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: nowrap;
+            flex-shrink: 0;
+        }
+
+        .main-shell,
+        .home-grid,
+        .home-left,
+        .home-right,
+        .stack-list,
+        .view,
+        .view-intro,
+        .post-card {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
+        .post-card {
+            border-radius: 18px;
+            overflow: hidden;
+        }
+
+        .bottom-nav {
+            left: 0;
+            width: 100%;
+            z-index: 999;
+        }
+
+        @media (max-width: 768px) {
+            html,
+            body {
+                width: 100%;
+                max-width: 100%;
+                overflow-x: hidden;
+            }
+
+            body {
+                padding-bottom: 80px;
+            }
+
+            * {
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+
+            .app-shell {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+                overflow-x: hidden;
+            }
+
+            .topbar {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                width: 100%;
+                padding: 12px;
+                box-sizing: border-box;
+                flex-wrap: nowrap;
+            }
+
+            .brand {
+                flex: 1 1 auto;
+                min-width: 0;
+                gap: 10px;
+            }
+
+            .main-shell {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+                margin: 0;
+                padding: 0 0 96px;
+            }
+
+            .home-grid {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+                margin: 0;
+                padding: 0 12px 18px;
+                gap: 16px;
+            }
+
+            .home-top-panel {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+                margin: 0 0 16px;
+                padding: 16px 0 10px;
+                border-radius: 0 0 24px 24px;
+            }
+
+            .stories-shell,
+            .stories-strip {
+                display: flex;
+                gap: 14px;
+                overflow-x: auto;
+                scrollbar-width: none;
+                padding: 10px 12px 14px;
+                width: 100%;
+                max-width: 100%;
+            }
+
+            .stories-shell::-webkit-scrollbar,
+            .stories-strip::-webkit-scrollbar {
+                display: none;
+            }
+
+            .story-item {
+                flex: 0 0 auto;
+                width: 72px;
+                min-width: 72px;
+            }
+
+            .story-card,
+            .story-card.story-ring {
+                width: 72px;
+                height: 72px;
+            }
+
+            .story-avatar {
+                width: 64px;
+                height: 64px;
+            }
+
+            .story-icon {
+                font-size: 24px;
+            }
+
+            .story-label {
+                max-width: 72px;
+                font-size: 11px;
+                white-space: nowrap;
+            }
+
+            .mood-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+                width: 100%;
+                padding: 0 12px 14px;
+            }
+
+            .mood-grid .mood-chip {
+                width: 100%;
+                min-width: 0;
+                text-align: center;
+            }
+
+            .stack-list {
+                padding: 0 12px;
+            }
+
+            .post-card {
+                width: 100%;
+                max-width: 100%;
+                margin: 0;
+                border-radius: 18px;
+                overflow: hidden;
+            }
+
+            .post-media,
+            .post-image,
+            .reel-video {
+                max-width: 100%;
+                height: auto;
+            }
+
+            .bottom-nav {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                z-index: 999;
+            }
+
+            .nav-button {
+                min-width: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -2168,7 +2369,7 @@
                     <div id="brandSubtitle" class="brand-subtitle">Home</div>
                 </div>
             </div>
-            <div style="display:flex; align-items:center; gap:10px;">
+            <div class="topbar-actions">
                 <button id="notificationButton" type="button" class="topbar-notification" title="Notifications" aria-label="Open notifications">🔔</button>
                 <button id="topbarAction" type="button" title="Refresh" aria-label="Refresh feed">↻</button>
             </div>
@@ -2184,7 +2385,7 @@
                     <div class="home-left">
                         <div class="home-top-panel">
                             <div id="storiesStrip" class="stories-shell" role="list"></div>
-                            <div id="moodSelector" class="mood-row"></div>
+                            <div id="moodSelector" class="mood-row mood-grid"></div>
                             <div id="moodLabel" class="home-mood-note">Because you're in Happy mood</div>
                         </div>
                         <ul id="homeFeed" class="stack-list"></ul>

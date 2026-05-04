@@ -67,6 +67,10 @@ video {
     display: block;
 }
 
+img {
+    height: auto;
+}
+
 [hidden] {
     display: none !important;
 }
@@ -203,6 +207,13 @@ video {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+}
+
+.topbar,
+.topbar > *,
+.topbar-actions,
+.topbar-actions > * {
+    min-width: 0;
 }
 
 .topbar-notification {
@@ -1932,6 +1943,130 @@ select:focus {
     .nav-button {
         font-size: 0.68rem;
         padding: 0.68rem 0.12rem;
+    }
+}
+
+@media (max-width: 768px) {
+    html,
+    body {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    body {
+        padding-bottom: 80px;
+    }
+
+    * {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .app-shell,
+    .main-shell,
+    .home-grid,
+    .home-left,
+    .home-right,
+    .post-card {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+        padding: 12px;
+        box-sizing: border-box;
+        flex-wrap: nowrap;
+    }
+
+    .brand {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .main-shell {
+        margin: 0;
+        padding: 0 0 96px;
+    }
+
+    .home-grid {
+        margin: 0;
+        padding: 0 12px 18px;
+        gap: 16px;
+    }
+
+    .stories-shell,
+    .stories-strip {
+        display: flex;
+        gap: 14px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        padding: 10px 12px 14px;
+    }
+
+    .stories-shell::-webkit-scrollbar,
+    .stories-strip::-webkit-scrollbar {
+        display: none;
+    }
+
+    .story-item {
+        flex: 0 0 auto;
+        width: 72px;
+        min-width: 72px;
+    }
+
+    .story-card,
+    .story-card.story-ring {
+        width: 72px;
+        height: 72px;
+    }
+
+    .story-avatar {
+        width: 64px;
+        height: 64px;
+    }
+
+    .story-icon {
+        font-size: 24px;
+    }
+
+    .story-label {
+        max-width: 72px;
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    .mood-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        width: 100%;
+        padding: 0 12px 14px;
+    }
+
+    .mood-grid .mood-chip {
+        width: 100%;
+        min-width: 0;
+        text-align: center;
+    }
+
+    .post-card {
+        border-radius: 18px;
+        overflow: hidden;
+    }
+
+    .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        z-index: 999;
     }
 }
 
