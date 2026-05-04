@@ -2696,7 +2696,7 @@
                             <span>${timeDisplay}</span>
                         </span>
                     </button>
-                    ${showDelete ? `<button class="ghost-button compact" type="button" data-action="delete-post" data-post-id="${post.id}">Delete</button>` : ''}
+                    ${showDelete ? `<button class="ghost-button compact delete-post-button" type="button" data-action="delete-post" data-post-id="${post.id}" aria-label="Delete post">Delete</button>` : ''}
                 </div>
                 <div class="card-body">
                     ${badge}

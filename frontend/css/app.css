@@ -944,9 +944,28 @@ button.primary-button::before {
 }
 
 .post-card {
+    position: relative;
     margin: 0;
     border: 1px solid rgba(255, 255, 255, 0.88);
     box-shadow: 0 20px 44px rgba(33, 77, 132, 0.08);
+}
+
+.post-card .delete-post-button {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.85rem;
+    line-height: 1;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.95);
+    color: #c53030;
+    border: 1px solid rgba(197, 48, 48, 0.16);
+}
+
+.post-card .delete-post-button:hover {
+    background: rgba(255, 255, 255, 1);
 }
 
 .post-action-toolbar {
