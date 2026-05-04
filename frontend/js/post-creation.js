@@ -11,9 +11,12 @@
   const MAX_CAROUSEL_PHOTOS = 10;
   const MIN_VIDEO_CLIP_SECONDS = 1;
 
-  const IMAGE_MODULE_URL = 'browser-image-compression';
-  const FFMPEG_MODULE_URL = '@ffmpeg/ffmpeg';
-  const FFMPEG_UTIL_URL = '@ffmpeg/util';
+  const IMAGE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.mjs';
+  const IMAGE_WORKER_LIB_URL = 'https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js';
+  const FFMPEG_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js';
+  const FFMPEG_UTIL_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js';
+  const FFMPEG_CORE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js';
+  const FFMPEG_WASM_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm';
 
   const PHOTO_IMAGE_PROFILES = [
     { fileType: 'image/webp', initialQuality: 0.92, maxWidthOrHeight: MAX_IMAGE_WIDTH },
@@ -898,7 +901,10 @@
           import(FFMPEG_UTIL_URL),
         ]).then(async ([ffmpegModule, utilModule]) => {
           const ffmpeg = new ffmpegModule.FFmpeg();
-          await ffmpeg.load();
+          await ffmpeg.load({
+            coreURL: FFMPEG_CORE_URL,
+            wasmURL: FFMPEG_WASM_URL,
+          });
 
           return {
             ffmpeg,
