@@ -1503,11 +1503,46 @@
         }
     }
 
+    async function syncUnreadNotificationCount() {
+        try {
+            const response = await apiRequest('/notifications');
+            const unreadCount = Array.isArray(response.notifications)
+                ? response.notifications.filter((notification) => !notification.readAt).length
+                : 0;
+            updateNotificationBadge(unreadCount);
+            return unreadCount;
+        } catch (error) {
+            console.warn('Unable to sync notification count', error);
+            return 0;
+        }
+    }
+
+    function updateNotificationBadge(count = 0) {
+        if (!dom.notificationButton) {
+            return;
+        }
+
+        if (count > 0) {
+            dom.notificationButton.dataset.badge = String(count);
+            dom.notificationButton.title = `${count} unread notification${count === 1 ? '' : 's'}`;
+            dom.notificationButton.classList.add('has-badge');
+            return;
+        }
+
+        delete dom.notificationButton.dataset.badge;
+        dom.notificationButton.title = 'Notifications';
+        dom.notificationButton.classList.remove('has-badge');
+    }
+
     async function loadNotifications() {
         try {
             const response = await apiRequest('/notifications');
             state.notifications = response.notifications || [];
             renderNotifications();
+            const unreadCount = Array.isArray(state.notifications)
+                ? state.notifications.filter((notification) => !notification.readAt).length
+                : 0;
+            updateNotificationBadge(unreadCount);
         } catch (error) {
             showToast(error.message || 'Failed to load notifications', 'error');
         }
@@ -1557,6 +1592,7 @@
                 readAt: new Date().toISOString(),
             }));
             renderNotifications();
+            updateNotificationBadge(0);
         } catch (error) {
             showToast(error.message || 'Unable to mark notifications as read', 'error');
         }
