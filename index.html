@@ -2095,6 +2095,67 @@
             color: #64748b;
         }
 
+        .media-status {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            line-height: 1.4;
+            background: rgba(59, 130, 246, 0.08);
+            color: #1d4ed8;
+        }
+
+        .media-status[data-tone="success"] {
+            background: rgba(34, 197, 94, 0.12);
+            color: #15803d;
+        }
+
+        .media-status[data-tone="error"] {
+            background: rgba(239, 68, 68, 0.12);
+            color: #b91c1c;
+        }
+
+        .video-trim-panel {
+            margin-top: 12px;
+            padding: 14px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.04);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+        }
+
+        .video-trim-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #0f172a;
+        }
+
+        .video-trim-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .video-trim-row {
+            display: grid;
+            gap: 8px;
+        }
+
+        .video-trim-row label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            color: #475569;
+        }
+
+        .video-trim-row input[type="range"] {
+            width: 100%;
+        }
+
         .form-actions {
             display: flex;
             gap: 12px;
@@ -2504,6 +2565,7 @@
                                     <img id="photoPreviewImg" src="" alt="Preview">
                                     <button type="button" class="remove-media" data-target="photo">Remove</button>
                                 </div>
+                                <div id="photoStatus" class="media-status" hidden></div>
                             </div>
 
                             <textarea id="photoCaption" class="form-input" placeholder="Add caption (optional)" maxlength="500"></textarea>
@@ -2539,6 +2601,29 @@
                                     <video id="videoPreviewVid" controls></video>
                                     <button type="button" class="remove-media" data-target="video">Remove</button>
                                 </div>
+                                <div id="videoTrimPanel" class="video-trim-panel" hidden>
+                                    <div class="video-trim-header">
+                                        <strong>Trim clip</strong>
+                                        <span id="videoTrimDuration">0.0s / 30s max</span>
+                                    </div>
+                                    <div class="video-trim-grid">
+                                        <div class="video-trim-row">
+                                            <label for="videoTrimStart">
+                                                <span>Start</span>
+                                                <span id="videoTrimStartValue">0.0s</span>
+                                            </label>
+                                            <input id="videoTrimStart" type="range" min="0" max="0" value="0" step="0.1">
+                                        </div>
+                                        <div class="video-trim-row">
+                                            <label for="videoTrimEnd">
+                                                <span>End</span>
+                                                <span id="videoTrimEndValue">0.0s</span>
+                                            </label>
+                                            <input id="videoTrimEnd" type="range" min="0" max="0" value="0" step="0.1">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="videoStatus" class="media-status" hidden></div>
                             </div>
 
                             <textarea id="videoCaption" class="form-input" placeholder="Add caption (optional)" maxlength="500"></textarea>

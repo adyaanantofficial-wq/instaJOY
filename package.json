@@ -8,15 +8,19 @@
     "dev": "nodemon server.js",
     "apply:supabase-schema": "node ./scripts/apply-supabase-schema.js",
     "verify:supabase-db": "node ./scripts/verify-supabase-db.js",
-    "verify:storage-policy": "node ./scripts/verify-storage-policy.js"
-    ,"migrate:mongo-to-supabase": "node ./scripts/migrate-mongo-to-supabase.js"
+    "verify:storage-policy": "node ./scripts/verify-storage-policy.js",
+    "migrate:mongo-to-supabase": "node ./scripts/migrate-mongo-to-supabase.js"
   },
   "engines": {
     "node": ">=18.0.0 <21.0.0"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@supabase/supabase-js": "^2.105.1",
     "bcryptjs": "^2.4.3",
+    "browser-image-compression": "^2.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
