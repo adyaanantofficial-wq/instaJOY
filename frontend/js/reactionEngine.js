@@ -10,8 +10,24 @@
     { key: 'respect', emoji: '👏', label: 'Respect', color: '#a7b9ff' },
   ];
 
+  function safeLocalStorageGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function safeLocalStorageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (_) {
+      // Ignore storage failures on private/incognito or restricted browsers.
+    }
+  }
+
   function getLastReaction() {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = safeLocalStorageGet(STORAGE_KEY);
     if (REACTIONS.some((reaction) => reaction.key === stored)) {
       return stored;
     }
@@ -22,7 +38,7 @@
     if (!REACTIONS.some((reaction) => reaction.key === key)) {
       key = 'love';
     }
-    localStorage.setItem(STORAGE_KEY, key);
+    safeLocalStorageSet(STORAGE_KEY, key);
     return key;
   }
 
@@ -92,15 +108,23 @@
       const radius = 84;
       button.style.left = `${centerX + Math.cos(angle) * radius - 24}px`;
       button.style.top = `${centerY + Math.sin(angle) * radius - 24}px`;
-      button.addEventListener('click', (event) => {
+      const handleSelection = (event) => {
+        event.preventDefault();
         event.stopPropagation();
+        if (handleSelection.fired) {
+          return;
+        }
+        handleSelection.fired = true;
         if (typeof onSelect === 'function') {
           onSelect(reaction.key);
         }
         setLastReaction(reaction.key);
         createBubble(reaction.emoji, centerX, centerY);
         closeRadialMenu();
-      });
+      };
+
+      button.addEventListener('click', handleSelection);
+      button.addEventListener('touchend', handleSelection);
       overlay.appendChild(button);
     });
 
