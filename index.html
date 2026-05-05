@@ -2509,6 +2509,128 @@
                 </div>
             </div>
 
+            <div id="storyCreateModal" class="modal-shell" hidden>
+                <div class="modal-card story-compose-card">
+                    <div class="panel-header">
+                        <div>
+                            <h3>Create Story</h3>
+                            <p class="story-compose-copy">Share a photo, short video, or text card that stays live for 24 hours.</p>
+                        </div>
+                        <button data-close-modal="storyCreateModal" class="ghost-button compact" type="button">Close</button>
+                    </div>
+                    <form id="storyCreateForm" class="form-stack">
+                        <div class="story-type-toggle" role="tablist" aria-label="Story type">
+                            <button type="button" class="story-type-button active" data-story-type="image">Photo</button>
+                            <button type="button" class="story-type-button" data-story-type="video">Video</button>
+                            <button type="button" class="story-type-button" data-story-type="text">Text</button>
+                        </div>
+
+                        <div id="storyComposerImageRow" class="story-compose-section">
+                            <input id="storyImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+                            <label for="storyImageInput" class="upload-label story-upload-button">
+                                <span>Choose story photo</span>
+                            </label>
+                            <div id="storyImageStatus" class="story-compose-note">No image selected.</div>
+                        </div>
+
+                        <div id="storyComposerVideoRow" class="story-compose-section" hidden>
+                            <input id="storyVideoInput" type="file" accept="video/mp4,video/webm,video/quicktime" hidden>
+                            <label for="storyVideoInput" class="upload-label story-upload-button">
+                                <span>Choose story video</span>
+                            </label>
+                            <div id="storyVideoStatus" class="story-compose-note">No video selected.</div>
+                        </div>
+
+                        <div id="storyComposerTextRow" class="story-compose-section" hidden>
+                            <label for="storyTextInput">Story text</label>
+                            <textarea id="storyTextInput" class="form-input" rows="5" maxlength="180" placeholder="Write a story thought..."></textarea>
+                        </div>
+
+                        <div id="storyCreatePreview" class="story-compose-preview" hidden></div>
+
+                        <div class="form-actions">
+                            <button type="button" data-close-modal="storyCreateModal" class="secondary-button">Cancel</button>
+                            <button type="submit" class="primary-button" id="storyCreateSubmit">Publish story</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div id="chainCreateModal" class="modal-shell" hidden>
+                <div class="modal-card story-compose-card">
+                    <div class="panel-header">
+                        <div>
+                            <h3>Create Chain</h3>
+                            <p class="story-compose-copy">Start a collaborative chain or add a new segment to an existing one.</p>
+                        </div>
+                        <button data-close-modal="chainCreateModal" class="ghost-button compact" type="button">Close</button>
+                    </div>
+                    <form id="chainCreateForm" class="form-stack">
+                        <label>
+                            Choose chain
+                            <select id="chainExistingSelect" class="form-input">
+                                <option value="">Start a new chain</option>
+                            </select>
+                        </label>
+
+                        <p id="chainFormHint" class="story-compose-note">Start a new collaborative chain, then publish the first segment.</p>
+
+                        <label>
+                            Chain title
+                            <input id="chainTitleInput" type="text" class="form-input" maxlength="60" placeholder="Weekend moments">
+                        </label>
+
+                        <label>
+                            Privacy
+                            <select id="chainPrivacyInput" class="form-input">
+                                <option value="public">Public join</option>
+                                <option value="friends">Friends only</option>
+                                <option value="private">Private</option>
+                            </select>
+                        </label>
+
+                        <div class="story-type-toggle" role="tablist" aria-label="Chain media type">
+                            <button type="button" class="story-type-button active" data-chain-type="image">Photo</button>
+                            <button type="button" class="story-type-button" data-chain-type="video">Video</button>
+                            <button type="button" class="story-type-button" data-chain-type="text">Text</button>
+                        </div>
+
+                        <div id="chainComposerImageRow" class="story-compose-section">
+                            <input id="chainImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+                            <label for="chainImageInput" class="upload-label story-upload-button">
+                                <span>Choose chain photo</span>
+                            </label>
+                            <div id="chainImageStatus" class="story-compose-note">No image selected.</div>
+                        </div>
+
+                        <div id="chainComposerVideoRow" class="story-compose-section" hidden>
+                            <input id="chainVideoInput" type="file" accept="video/mp4,video/webm,video/quicktime" hidden>
+                            <label for="chainVideoInput" class="upload-label story-upload-button">
+                                <span>Choose chain video</span>
+                            </label>
+                            <div id="chainVideoStatus" class="story-compose-note">No video selected.</div>
+                        </div>
+
+                        <div id="chainComposerTextRow" class="story-compose-section" hidden>
+                            <label for="chainTextInput">Chain text</label>
+                            <textarea id="chainTextInput" class="form-input" rows="5" maxlength="180" placeholder="Write the next part of the chain..."></textarea>
+                        </div>
+
+                        <label>
+                            Segment caption
+                            <textarea id="chainCaptionInput" class="form-input" rows="3" maxlength="180" placeholder="Optional caption for this chain segment"></textarea>
+                        </label>
+
+                        <div id="chainCreatePreview" class="story-compose-preview" hidden></div>
+
+                        <div class="form-actions">
+                            <button type="button" data-close-modal="chainCreateModal" class="secondary-button">Cancel</button>
+                            <button type="submit" class="primary-button" id="chainCreateSubmit">Publish chain</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <!-- Post Creation Modal -->
             <div id="createModal" class="modal-overlay hidden" aria-hidden="true">
                 <div class="modal-content">

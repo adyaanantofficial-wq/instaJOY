@@ -262,6 +262,9 @@
         dom.storyComposerImageRow = document.getElementById('storyComposerImageRow');
         dom.storyComposerVideoRow = document.getElementById('storyComposerVideoRow');
         dom.storyComposerTextRow = document.getElementById('storyComposerTextRow');
+        dom.storyCreatePreview = document.getElementById('storyCreatePreview');
+        dom.storyImageStatus = document.getElementById('storyImageStatus');
+        dom.storyVideoStatus = document.getElementById('storyVideoStatus');
         dom.storyCreateSubmit = document.getElementById('storyCreateSubmit');
         dom.chainCreateModal = document.getElementById('chainCreateModal');
         dom.chainCreateForm = document.getElementById('chainCreateForm');
@@ -275,6 +278,10 @@
         dom.chainComposerImageRow = document.getElementById('chainComposerImageRow');
         dom.chainComposerVideoRow = document.getElementById('chainComposerVideoRow');
         dom.chainComposerTextRow = document.getElementById('chainComposerTextRow');
+        dom.chainCreatePreview = document.getElementById('chainCreatePreview');
+        dom.chainImageStatus = document.getElementById('chainImageStatus');
+        dom.chainVideoStatus = document.getElementById('chainVideoStatus');
+        dom.chainFormHint = document.getElementById('chainFormHint');
         dom.chainCaptionInput = document.getElementById('chainCaptionInput');
         dom.chainCreateSubmit = document.getElementById('chainCreateSubmit');
         dom.toastHost = document.getElementById('toastHost');
@@ -469,6 +476,14 @@
         dom.chainTypeButtons.forEach((button) => {
             button.addEventListener('click', () => setChainComposerType(button.dataset.chainType || 'image'));
         });
+        dom.storyImageInput?.addEventListener('change', () => syncComposerMediaSelection('story', 'image'));
+        dom.storyVideoInput?.addEventListener('change', () => syncComposerMediaSelection('story', 'video'));
+        dom.storyTextInput?.addEventListener('input', () => syncComposerTextPreview('story'));
+        dom.chainImageInput?.addEventListener('change', () => syncComposerMediaSelection('chain', 'image'));
+        dom.chainVideoInput?.addEventListener('change', () => syncComposerMediaSelection('chain', 'video'));
+        dom.chainTextInput?.addEventListener('input', () => syncComposerTextPreview('chain'));
+        dom.chainExistingSelect?.addEventListener('change', syncChainFormWithSelection);
+        document.addEventListener('keydown', handleGlobalKeydown);
         if (dom.chatBackButton) {
             dom.chatBackButton.addEventListener('click', () => {
                 state.messages.activeUser = null;
@@ -1226,12 +1241,14 @@
         state.stories.loading = true;
 
         try {
-            const [response, chainResponse] = await Promise.all([
+            const [storiesResult, chainResult] = await Promise.allSettled([
                 apiRequest('/stories?limit=10', { auth: false }),
                 apiRequest('/story-chains?limit=6', { auth: false }),
             ]);
-            state.stories.items = Array.isArray(response.stories) ? response.stories : [];
-            state.stories.chainItems = Array.isArray(chainResponse.chains) ? chainResponse.chains : [];
+            const storyPayload = storiesResult.status === 'fulfilled' ? storiesResult.value : {};
+            const chainPayload = chainResult.status === 'fulfilled' ? chainResult.value : {};
+            state.stories.items = Array.isArray(storyPayload.stories) ? storyPayload.stories : [];
+            state.stories.chainItems = Array.isArray(chainPayload.chains) ? chainPayload.chains : [];
         } catch (error) {
             state.stories.items = Array.isArray(window.INSTAJOY_DEMO_DATA?.stories) ? window.INSTAJOY_DEMO_DATA.stories.slice() : [];
             state.stories.chainItems = [];
@@ -1316,41 +1333,663 @@
 
     function openStoryViewer(index) {
         const stories = state.stories.items || [];
-        const story = stories[index];
-        if (!story || !dom.storyModal || !dom.storyVideo) return;
+        const safeIndex = Number.isFinite(index) ? index : 0;
+        const story = stories[safeIndex];
+        if (!story || !dom.storyModal || !dom.storyVideo || !dom.storyImage) return;
 
-        state.storyViewer.activeIndex = index;
+        clearStoryAdvanceTimer();
+        state.storyViewer.items = stories.slice();
+        state.storyViewer.activeIndex = safeIndex;
         state.storyViewer.isOpen = true;
         dom.storyModal.hidden = false;
         dom.storyModal.setAttribute('aria-hidden', 'false');
-        dom.storyProgress.innerHTML = stories.map((_, barIndex) => `
-            <span class="story-progress-bar ${barIndex === index ? 'active' : ''}" style="--progress:${barIndex === index ? 1 : 0}"></span>
-        `).join('');
         dom.storyMetaAvatar.src = getAvatar(story.avatar);
         dom.storyMetaAvatar.alt = escapeHtml(story.username || 'Story user');
         dom.storyMetaUser.textContent = story.username || 'instaJOY';
         dom.storyMetaTime.textContent = formatShortDate(story.timestamp || new Date());
-        dom.storyVideo.src = story.video || '';
-        dom.storyVideo.poster = story.thumb || DEFAULT_AVATAR;
-        dom.storyVideo.currentTime = 0;
-        dom.storyVideo.play().catch(() => {});
+        document.body.style.overflow = 'hidden';
+
+        const mediaUrl = story.mediaUrl || story.video || story.image || story.thumb || '';
+        const mediaType = inferStoryMediaType(story.type || story.mediaType, mediaUrl);
+        const durationMs = mediaType === 'video' ? 7000 : 5000;
+        updateStoryProgressBars(stories.length, safeIndex, durationMs);
+
+        if (mediaType === 'video') {
+            dom.storyImage.hidden = true;
+            dom.storyImage.src = '';
+            dom.storyVideo.hidden = false;
+            dom.storyVideo.controls = false;
+            dom.storyVideo.muted = true;
+            dom.storyVideo.src = mediaUrl;
+            dom.storyVideo.poster = story.thumb || getAvatar(story.avatar);
+            dom.storyVideo.currentTime = 0;
+            dom.storyVideo.onloadedmetadata = () => {
+                const videoDurationMs = Number.isFinite(dom.storyVideo.duration) && dom.storyVideo.duration > 0
+                    ? Math.max(3000, Math.min(15000, Math.round(dom.storyVideo.duration * 1000)))
+                    : 7000;
+                updateStoryProgressBars(stories.length, safeIndex, videoDurationMs);
+                scheduleStoryAdvance(videoDurationMs);
+                dom.storyVideo.play().catch(() => {});
+            };
+            dom.storyVideo.onended = () => switchStory(1);
+            dom.storyVideo.load();
+            scheduleStoryAdvance(durationMs);
+            return;
+        }
+
+        dom.storyVideo.pause();
+        dom.storyVideo.removeAttribute('src');
+        dom.storyVideo.load();
+        dom.storyVideo.hidden = true;
+        dom.storyVideo.onloadedmetadata = null;
+        dom.storyVideo.onended = null;
+        dom.storyImage.src = mediaUrl;
+        dom.storyImage.hidden = false;
+        scheduleStoryAdvance(durationMs);
     }
 
     function closeStoryViewer() {
-        if (!dom.storyModal || !dom.storyVideo) return;
+        if (!dom.storyModal || !dom.storyVideo || !dom.storyImage) return;
+        clearStoryAdvanceTimer();
         state.storyViewer.isOpen = false;
         dom.storyModal.hidden = true;
         dom.storyModal.setAttribute('aria-hidden', 'true');
         dom.storyVideo.pause();
+        dom.storyVideo.onloadedmetadata = null;
+        dom.storyVideo.onended = null;
+        dom.storyVideo.removeAttribute('src');
+        dom.storyVideo.load();
+        dom.storyImage.src = '';
+        dom.storyImage.hidden = true;
+        document.body.style.overflow = '';
     }
 
     function switchStory(delta) {
         const stories = state.stories.items || [];
         if (!stories.length) return;
         let nextIndex = state.storyViewer.activeIndex + delta;
-        if (nextIndex < 0) nextIndex = stories.length - 1;
-        if (nextIndex >= stories.length) nextIndex = 0;
+        if (nextIndex < 0) {
+            nextIndex = 0;
+        }
+        if (nextIndex >= stories.length) {
+            closeStoryViewer();
+            return;
+        }
         openStoryViewer(nextIndex);
+    }
+
+    function handleGlobalKeydown(event) {
+        if (!state.storyViewer.isOpen) {
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            closeStoryViewer();
+            return;
+        }
+
+        if (event.key === 'ArrowRight') {
+            switchStory(1);
+            return;
+        }
+
+        if (event.key === 'ArrowLeft') {
+            switchStory(-1);
+        }
+    }
+
+    function clearStoryAdvanceTimer() {
+        if (state.storyViewer.advanceTimer) {
+            window.clearTimeout(state.storyViewer.advanceTimer);
+            state.storyViewer.advanceTimer = null;
+        }
+    }
+
+    function scheduleStoryAdvance(durationMs) {
+        clearStoryAdvanceTimer();
+        state.storyViewer.advanceTimer = window.setTimeout(() => {
+            if (!state.storyViewer.isOpen) {
+                return;
+            }
+            switchStory(1);
+        }, Math.max(1500, durationMs || 5000));
+    }
+
+    function updateStoryProgressBars(total, activeIndex, durationMs) {
+        if (!dom.storyProgress) {
+            return;
+        }
+
+        dom.storyProgress.innerHTML = Array.from({ length: total }, (_, barIndex) => (
+            `<span class="story-progress-bar ${barIndex === activeIndex ? 'active' : ''}" style="--progress:${barIndex < activeIndex ? '100%' : '0%'};--story-progress-duration:${barIndex === activeIndex ? `${durationMs}ms` : '0ms'}"></span>`
+        )).join('');
+
+        window.requestAnimationFrame(() => {
+            const activeBar = dom.storyProgress?.children?.[activeIndex];
+            if (activeBar) {
+                activeBar.style.setProperty('--progress', '100%');
+            }
+        });
+    }
+
+    function inferStoryMediaType(explicitType, mediaUrl) {
+        if (explicitType === 'video' || explicitType === 'image') {
+            return explicitType;
+        }
+
+        const value = String(mediaUrl || '').toLowerCase();
+        if (
+            value.startsWith('data:video/')
+            || value.endsWith('.mp4')
+            || value.endsWith('.webm')
+            || value.endsWith('.mov')
+            || value.endsWith('.m4v')
+        ) {
+            return 'video';
+        }
+
+        return 'image';
+    }
+
+    function getStoryComposerType() {
+        return [...dom.storyTypeButtons].find((button) => button.classList.contains('active'))?.dataset.storyType || 'image';
+    }
+
+    function getChainComposerType() {
+        return [...dom.chainTypeButtons].find((button) => button.classList.contains('active'))?.dataset.chainType || 'image';
+    }
+
+    function clearComposerPreview(previewElement) {
+        if (!previewElement) {
+            return;
+        }
+
+        const objectUrl = previewElement.dataset.objectUrl;
+        if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+        }
+
+        previewElement.hidden = true;
+        previewElement.dataset.objectUrl = '';
+        previewElement.innerHTML = '';
+    }
+
+    function renderComposerPreview(previewElement, markup, objectUrl) {
+        if (!previewElement) {
+            return;
+        }
+
+        clearComposerPreview(previewElement);
+        previewElement.hidden = false;
+        previewElement.innerHTML = markup;
+        if (objectUrl) {
+            previewElement.dataset.objectUrl = objectUrl;
+        }
+    }
+
+    function setComposerStatus(element, message) {
+        if (element) {
+            element.textContent = message;
+        }
+    }
+
+    function syncComposerMediaSelection(scope, mediaType) {
+        const isStory = scope === 'story';
+        const input = isStory
+            ? (mediaType === 'image' ? dom.storyImageInput : dom.storyVideoInput)
+            : (mediaType === 'image' ? dom.chainImageInput : dom.chainVideoInput);
+        const statusElement = isStory
+            ? (mediaType === 'image' ? dom.storyImageStatus : dom.storyVideoStatus)
+            : (mediaType === 'image' ? dom.chainImageStatus : dom.chainVideoStatus);
+        const previewElement = isStory ? dom.storyCreatePreview : dom.chainCreatePreview;
+        const file = input?.files?.[0];
+
+        if (!file) {
+            setComposerStatus(statusElement, mediaType === 'image' ? 'No image selected.' : 'No video selected.');
+            clearComposerPreview(previewElement);
+            return;
+        }
+
+        setComposerStatus(statusElement, `${file.name} • ${formatBytes(file.size)}`);
+        const objectUrl = URL.createObjectURL(file);
+        const previewMarkup = mediaType === 'video'
+            ? `<video src="${objectUrl}" controls muted playsinline preload="metadata"></video>`
+            : `<img src="${objectUrl}" alt="${escapeHtml(file.name)}">`;
+        renderComposerPreview(previewElement, previewMarkup, objectUrl);
+    }
+
+    function syncComposerTextPreview(scope) {
+        const isStory = scope === 'story';
+        const text = String(isStory ? dom.storyTextInput?.value : dom.chainTextInput?.value).trim();
+        const previewElement = isStory ? dom.storyCreatePreview : dom.chainCreatePreview;
+
+        if (!text) {
+            clearComposerPreview(previewElement);
+            return;
+        }
+
+        renderComposerPreview(
+            previewElement,
+            `<div class="story-compose-text-preview">${escapeHtml(text)}</div>`
+        );
+    }
+
+    function setStoryComposerType(type) {
+        const nextType = type === 'video' || type === 'text' ? type : 'image';
+        dom.storyTypeButtons.forEach((button) => {
+            button.classList.toggle('active', button.dataset.storyType === nextType);
+        });
+        if (dom.storyComposerImageRow) {
+            dom.storyComposerImageRow.hidden = nextType !== 'image';
+        }
+        if (dom.storyComposerVideoRow) {
+            dom.storyComposerVideoRow.hidden = nextType !== 'video';
+        }
+        if (dom.storyComposerTextRow) {
+            dom.storyComposerTextRow.hidden = nextType !== 'text';
+        }
+
+        if (nextType === 'text') {
+            syncComposerTextPreview('story');
+            return;
+        }
+
+        syncComposerMediaSelection('story', nextType);
+    }
+
+    function resetStoryComposer() {
+        if (dom.storyCreateForm) {
+            dom.storyCreateForm.reset();
+        }
+        clearComposerPreview(dom.storyCreatePreview);
+        setComposerStatus(dom.storyImageStatus, 'No image selected.');
+        setComposerStatus(dom.storyVideoStatus, 'No video selected.');
+        if (dom.storyCreateSubmit) {
+            dom.storyCreateSubmit.disabled = false;
+            dom.storyCreateSubmit.textContent = 'Publish story';
+        }
+        setStoryComposerType('image');
+    }
+
+    function openStoryCreateModal() {
+        if (!requireLogin('creating a story')) {
+            return;
+        }
+        resetStoryComposer();
+        openModal(dom.storyCreateModal);
+    }
+
+    function setChainComposerType(type) {
+        const nextType = type === 'video' || type === 'text' ? type : 'image';
+        dom.chainTypeButtons.forEach((button) => {
+            button.classList.toggle('active', button.dataset.chainType === nextType);
+        });
+        if (dom.chainComposerImageRow) {
+            dom.chainComposerImageRow.hidden = nextType !== 'image';
+        }
+        if (dom.chainComposerVideoRow) {
+            dom.chainComposerVideoRow.hidden = nextType !== 'video';
+        }
+        if (dom.chainComposerTextRow) {
+            dom.chainComposerTextRow.hidden = nextType !== 'text';
+        }
+
+        if (nextType === 'text') {
+            syncComposerTextPreview('chain');
+            return;
+        }
+
+        syncComposerMediaSelection('chain', nextType);
+    }
+
+    function populateChainExistingOptions(selectedId = '') {
+        if (!dom.chainExistingSelect) {
+            return;
+        }
+
+        const options = [
+            '<option value="">Start a new chain</option>',
+            ...(state.stories.chainItems || []).map((chain) => {
+                const label = escapeHtml(chain.title || `${chain.username || 'instaJOY'} chain`);
+                const badge = `${chain.segmentCount || 0} segments`;
+                return `<option value="${chain.id}" ${chain.id === selectedId ? 'selected' : ''}>${label} • ${badge}</option>`;
+            }),
+        ];
+
+        dom.chainExistingSelect.innerHTML = options.join('');
+        if (selectedId && !(state.stories.chainItems || []).some((chain) => chain.id === selectedId)) {
+            dom.chainExistingSelect.value = '';
+        }
+    }
+
+    function syncChainFormWithSelection() {
+        const selectedChain = (state.stories.chainItems || []).find((chain) => chain.id === dom.chainExistingSelect?.value);
+        const isExistingChain = Boolean(selectedChain);
+        const isOwner = selectedChain?.creatorId === state.session.user?.id;
+
+        if (selectedChain) {
+            if (dom.chainTitleInput) {
+                dom.chainTitleInput.value = selectedChain.title || `${selectedChain.username || 'instaJOY'} chain`;
+                dom.chainTitleInput.disabled = !isOwner;
+            }
+            if (dom.chainPrivacyInput) {
+                dom.chainPrivacyInput.value = selectedChain.privacy || 'public';
+                dom.chainPrivacyInput.disabled = !isOwner;
+            }
+            if (dom.chainFormHint) {
+                dom.chainFormHint.textContent = isOwner
+                    ? 'Adding a new segment to your chain.'
+                    : `Adding a segment to ${selectedChain.username || 'this'} chain. Title and privacy stay locked.`;
+            }
+            return;
+        }
+
+        if (dom.chainTitleInput) {
+            dom.chainTitleInput.disabled = false;
+            if (!dom.chainTitleInput.value.trim()) {
+                dom.chainTitleInput.value = '';
+            }
+        }
+        if (dom.chainPrivacyInput) {
+            dom.chainPrivacyInput.disabled = false;
+            dom.chainPrivacyInput.value = dom.chainPrivacyInput.value || 'public';
+        }
+        if (dom.chainFormHint) {
+            dom.chainFormHint.textContent = 'Start a new collaborative chain, then publish the first segment.';
+        }
+    }
+
+    async function openChainCreateModal(selectedChainId = '') {
+        if (!requireLogin('creating a chain')) {
+            return;
+        }
+
+        if (!(state.stories.chainItems || []).length) {
+            try {
+                const response = await apiRequest('/story-chains?limit=12', { auth: false });
+                state.stories.chainItems = Array.isArray(response.chains) ? response.chains : [];
+            } catch (_) {
+                state.stories.chainItems = state.stories.chainItems || [];
+            }
+        }
+
+        resetChainComposer();
+        populateChainExistingOptions(selectedChainId);
+        if (selectedChainId && dom.chainExistingSelect) {
+            dom.chainExistingSelect.value = selectedChainId;
+        }
+        syncChainFormWithSelection();
+        openModal(dom.chainCreateModal);
+    }
+
+    function resetChainComposer() {
+        if (dom.chainCreateForm) {
+            dom.chainCreateForm.reset();
+        }
+        clearComposerPreview(dom.chainCreatePreview);
+        setComposerStatus(dom.chainImageStatus, 'No image selected.');
+        setComposerStatus(dom.chainVideoStatus, 'No video selected.');
+        populateChainExistingOptions();
+        if (dom.chainTitleInput) {
+            dom.chainTitleInput.value = '';
+            dom.chainTitleInput.disabled = false;
+        }
+        if (dom.chainPrivacyInput) {
+            dom.chainPrivacyInput.value = 'public';
+            dom.chainPrivacyInput.disabled = false;
+        }
+        if (dom.chainCreateSubmit) {
+            dom.chainCreateSubmit.disabled = false;
+            dom.chainCreateSubmit.textContent = 'Publish chain';
+        }
+        if (dom.chainFormHint) {
+            dom.chainFormHint.textContent = 'Start a new collaborative chain, then publish the first segment.';
+        }
+        setChainComposerType('image');
+    }
+
+    function wrapStoryText(value, maxChars = 18, maxLines = 6) {
+        const words = String(value || '').trim().split(/\s+/).filter(Boolean);
+        if (!words.length) {
+            return [];
+        }
+
+        const lines = [];
+        let current = '';
+        words.forEach((word) => {
+            const next = current ? `${current} ${word}` : word;
+            if (next.length <= maxChars) {
+                current = next;
+                return;
+            }
+            if (current) {
+                lines.push(current);
+            }
+            current = word;
+        });
+        if (current) {
+            lines.push(current);
+        }
+
+        return lines.slice(0, maxLines);
+    }
+
+    function escapeSvgText(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function buildTextStoryDataUri(text) {
+        const lines = wrapStoryText(text, 18, 6);
+        const tspans = lines.map((line, index) => (
+            `<tspan x="50%" dy="${index === 0 ? '0' : '1.32em'}">${escapeSvgText(line)}</tspan>`
+        )).join('');
+        const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+                <defs>
+                    <linearGradient id="storyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#1d4ed8" />
+                        <stop offset="55%" stop-color="#f97316" />
+                        <stop offset="100%" stop-color="#f43f5e" />
+                    </linearGradient>
+                </defs>
+                <rect width="1080" height="1920" rx="72" fill="url(#storyGradient)" />
+                <circle cx="890" cy="220" r="210" fill="rgba(255,255,255,0.14)" />
+                <circle cx="180" cy="1580" r="260" fill="rgba(255,255,255,0.12)" />
+                <text x="50%" y="50%" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" text-anchor="middle" dominant-baseline="middle">
+                    ${tspans}
+                </text>
+                <text x="50%" y="1780" fill="rgba(255,255,255,0.88)" font-family="Arial, Helvetica, sans-serif" font-size="44" text-anchor="middle">instaJOY story</text>
+            </svg>
+        `;
+
+        return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg.replace(/\s{2,}/g, ' ').trim())}`;
+    }
+
+    async function buildStoryMediaPayload(type, scope) {
+        if (type === 'text') {
+            const textInput = scope === 'story' ? dom.storyTextInput : dom.chainTextInput;
+            const text = String(textInput?.value || '').trim().slice(0, 180);
+            if (!text) {
+                throw new Error('Write something for your text story.');
+            }
+            return {
+                mediaUrl: buildTextStoryDataUri(text),
+                mediaType: 'image',
+            };
+        }
+
+        const fileInput = scope === 'story'
+            ? (type === 'image' ? dom.storyImageInput : dom.storyVideoInput)
+            : (type === 'image' ? dom.chainImageInput : dom.chainVideoInput);
+        const file = fileInput?.files?.[0];
+        if (!file) {
+            throw new Error(type === 'image' ? 'Choose an image first.' : 'Choose a video first.');
+        }
+
+        if (type === 'image') {
+            const image = await compressImageFile(file, MAX_IMAGE_BYTES, 1440);
+            return {
+                mediaUrl: image.dataUri,
+                mediaType: 'image',
+            };
+        }
+
+        const metadata = await readVideoMetadata(file);
+        if (file.size > MAX_REEL_BYTES) {
+            throw new Error(`Story video must stay under ${formatBytes(MAX_REEL_BYTES)}.`);
+        }
+        if (metadata.duration > MAX_REEL_DURATION) {
+            throw new Error(`Story video must stay under ${MAX_REEL_DURATION} seconds.`);
+        }
+
+        return {
+            mediaUrl: await fileToDataUrl(file),
+            mediaType: 'video',
+        };
+    }
+
+    async function handleStoryCreateSubmit(event) {
+        event.preventDefault();
+
+        if (!requireLogin('creating a story')) {
+            return;
+        }
+
+        if (dom.storyCreateSubmit) {
+            dom.storyCreateSubmit.disabled = true;
+            dom.storyCreateSubmit.textContent = 'Publishing...';
+        }
+
+        try {
+            const composerType = getStoryComposerType();
+            const payload = await buildStoryMediaPayload(composerType, 'story');
+            const response = await apiRequest('/stories', {
+                method: 'POST',
+                body: {
+                    mediaUrl: payload.mediaUrl,
+                    type: payload.mediaType,
+                },
+            });
+
+            closeModal(dom.storyCreateModal);
+            await fetchStories(true);
+
+            if (response.story?.id) {
+                const createdIndex = (state.stories.items || []).findIndex((story) => story.id === response.story.id);
+                if (createdIndex >= 0) {
+                    openStoryViewer(createdIndex);
+                }
+            }
+
+            showToast('Story published.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not publish story.', 'error');
+        } finally {
+            if (dom.storyCreateSubmit) {
+                dom.storyCreateSubmit.disabled = false;
+                dom.storyCreateSubmit.textContent = 'Publish story';
+            }
+        }
+    }
+
+    async function handleChainCreateSubmit(event) {
+        event.preventDefault();
+
+        if (!requireLogin('creating a chain')) {
+            return;
+        }
+
+        if (dom.chainCreateSubmit) {
+            dom.chainCreateSubmit.disabled = true;
+            dom.chainCreateSubmit.textContent = 'Publishing...';
+        }
+
+        try {
+            const composerType = getChainComposerType();
+            const payload = await buildStoryMediaPayload(composerType, 'chain');
+            const client = getSupabaseClientOrThrow();
+            const selectedChainId = String(dom.chainExistingSelect?.value || '').trim();
+            const selectedChain = (state.stories.chainItems || []).find((chain) => chain.id === selectedChainId) || null;
+            const isOwner = selectedChain?.creatorId === state.session.user?.id;
+            const title = String(dom.chainTitleInput?.value || '').trim() || 'Story chain';
+            const privacy = String(dom.chainPrivacyInput?.value || selectedChain?.privacy || 'public');
+            const caption = String(dom.chainCaptionInput?.value || '').trim() || null;
+
+            let chainId = selectedChainId;
+
+            if (!chainId) {
+                const { data, error } = await client
+                    .from('story_chains')
+                    .insert({
+                        creator_id: state.session.user.id,
+                        title,
+                        privacy,
+                        allow_public: privacy === 'public',
+                        max_segments: 20,
+                        created_at: new Date().toISOString(),
+                    })
+                    .select('id')
+                    .single();
+
+                if (error || !data?.id) {
+                    throw error || new Error('Could not create story chain.');
+                }
+
+                chainId = data.id;
+            } else if (isOwner) {
+                const { error } = await client
+                    .from('story_chains')
+                    .update({
+                        title,
+                        privacy,
+                        allow_public: privacy === 'public',
+                    })
+                    .eq('id', chainId);
+
+                if (error) {
+                    throw error;
+                }
+            }
+
+            const countResult = await client
+                .from('story_chain_segments')
+                .select('id', { count: 'exact', head: true })
+                .eq('chain_id', chainId);
+            if (countResult.error) {
+                throw countResult.error;
+            }
+
+            const { error: segmentError } = await client
+                .from('story_chain_segments')
+                .insert({
+                    chain_id: chainId,
+                    user_id: state.session.user.id,
+                    media_url: payload.mediaUrl,
+                    caption,
+                    segment_order: (countResult.count || 0) + 1,
+                    created_at: new Date().toISOString(),
+                });
+
+            if (segmentError) {
+                throw segmentError;
+            }
+
+            closeModal(dom.chainCreateModal);
+            await fetchStories(true);
+            showToast('Chain published.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not publish chain.', 'error');
+        } finally {
+            if (dom.chainCreateSubmit) {
+                dom.chainCreateSubmit.disabled = false;
+                dom.chainCreateSubmit.textContent = 'Publish chain';
+            }
+        }
     }
 
     async function loadReels(reset) {
@@ -2478,6 +3117,16 @@
             return;
         }
 
+        if (action === 'open-story-create') {
+            openStoryCreateModal();
+            return;
+        }
+
+        if (action === 'open-chain-create') {
+            await openChainCreateModal(target.dataset.chainId || '');
+            return;
+        }
+
         if (action === 'story-prev') {
             switchStory(-1);
             return;
@@ -2641,6 +3290,12 @@
             dom.removeProfileImage.checked = false;
             state.profile.pendingImageData = null;
         }
+        if (element === dom.storyCreateModal) {
+            resetStoryComposer();
+        }
+        if (element === dom.chainCreateModal) {
+            resetChainComposer();
+        }
     }
 
     function renderPostCard(post, compact) {
@@ -2772,8 +3427,21 @@
     function renderStories() {
         if (!dom.storiesShell) return;
         const staticItems = [
-            { label: 'Your story', icon: '+', className: 'story-create' },
-            { label: '+ Create chain', icon: '🔗', className: 'story-link' },
+            {
+                label: 'Your story',
+                className: 'story-create',
+                action: 'open-story-create',
+                content: `
+                    <img class="story-avatar story-action-avatar" src="${getAvatar(state.session.user?.profileImage || state.session.user?.avatar)}" alt="Your story" onerror="this.src='ilogo.png'">
+                    <span class="story-action-badge">+</span>
+                `,
+            },
+            {
+                label: 'Create chain',
+                className: 'story-link',
+                action: 'open-chain-create',
+                content: '<span class="story-icon">🔗</span>',
+            },
         ];
 
         const dynamicItems = (state.stories.items || []).map((story, index) => `
@@ -2787,8 +3455,8 @@
 
         dom.storiesShell.innerHTML = staticItems.map((item) => `
             <div class="story-item">
-                <button class="story-card story-action ${item.className || ''}" type="button" aria-label="${item.label}">
-                    <span class="story-icon">${item.icon}</span>
+                <button class="story-card story-action ${item.className || ''}" type="button" data-action="${item.action}" aria-label="${item.label}">
+                    ${item.content}
                 </button>
                 <div class="story-label">${item.label}</div>
             </div>
@@ -3164,8 +3832,62 @@
                 username: profile?.username || 'instaJOY',
                 avatar: profile?.avatar_url || DEFAULT_AVATAR,
                 thumb: profile?.avatar_url || DEFAULT_AVATAR,
+                type: inferStoryMediaType(story.type, story.media_url),
+                mediaUrl: story.media_url,
                 video: story.media_url,
                 timestamp: story.created_at,
+            };
+        });
+    }
+
+    async function hydrateStoryChains(rows) {
+        const chainRows = Array.isArray(rows) ? rows : [];
+        if (!chainRows.length) {
+            return [];
+        }
+
+        const participantIds = chainRows.flatMap((chain) => [
+            chain.creator_id,
+            ...((chain.story_chain_segments || []).map((segment) => segment.user_id)),
+        ]).filter(Boolean);
+        const profilesMap = await fetchProfilesMapByIds(participantIds);
+
+        return chainRows.map((chain) => {
+            const segments = [...(chain.story_chain_segments || [])]
+                .sort((left, right) => {
+                    const orderDiff = Number(left.segment_order || 0) - Number(right.segment_order || 0);
+                    if (orderDiff !== 0) {
+                        return orderDiff;
+                    }
+                    return new Date(left.created_at || 0) - new Date(right.created_at || 0);
+                })
+                .map((segment) => {
+                    const participant = profilesMap.get(segment.user_id);
+                    return {
+                        id: segment.id,
+                        userId: segment.user_id,
+                        username: participant?.username || 'member',
+                        avatar: participant?.avatar_url || DEFAULT_AVATAR,
+                        mediaUrl: segment.media_url || '',
+                        caption: segment.caption || '',
+                        createdAt: segment.created_at,
+                        segmentOrder: segment.segment_order || 0,
+                        type: inferStoryMediaType('', segment.media_url),
+                    };
+                });
+
+            const creator = profilesMap.get(chain.creator_id);
+            return {
+                id: chain.id,
+                creatorId: chain.creator_id,
+                username: creator?.username || 'instaJOY',
+                avatar: creator?.avatar_url || DEFAULT_AVATAR,
+                title: chain.title || `${creator?.username || 'instaJOY'} chain`,
+                privacy: chain.privacy || 'public',
+                status: chain.status || 'active',
+                createdAt: chain.created_at,
+                segmentCount: segments.length,
+                segments,
             };
         });
     }
@@ -3534,6 +4256,51 @@
             }
 
             return { stories: await hydrateStories(data || []) };
+        }
+
+        if (pathname === '/stories' && method === 'POST') {
+            const user = requireAuthenticatedUserRecord();
+            const mediaUrl = String(settings.body?.mediaUrl || settings.body?.media_url || '').trim();
+            const type = inferStoryMediaType(settings.body?.type, mediaUrl);
+
+            if (!mediaUrl) {
+                throw new Error('Story media is required.');
+            }
+
+            const { data, error } = await client
+                .from('stories')
+                .insert({
+                    user_id: user.id,
+                    media_url: mediaUrl,
+                    type,
+                    created_at: new Date().toISOString(),
+                    expires_at: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+                })
+                .select('id, user_id, media_url, type, created_at, expires_at')
+                .single();
+
+            if (error) {
+                throw error;
+            }
+
+            const [story] = await hydrateStories([data]);
+            return { story };
+        }
+
+        if (pathname === '/story-chains' && method === 'GET') {
+            const limit = Number(requestUrl.searchParams.get('limit') || 6);
+            const { data, error } = await client
+                .from('story_chains')
+                .select('id, creator_id, title, privacy, status, created_at, story_chain_segments(id, user_id, media_url, caption, segment_order, created_at)')
+                .neq('status', 'expired')
+                .order('created_at', { ascending: false })
+                .limit(limit);
+
+            if (error) {
+                throw error;
+            }
+
+            return { chains: await hydrateStoryChains(data || []) };
         }
 
         if (pathname === '/posts/feed' && method === 'GET') {
