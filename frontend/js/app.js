@@ -1342,6 +1342,7 @@
         state.storyViewer.activeIndex = safeIndex;
         state.storyViewer.isOpen = true;
         dom.storyModal.hidden = false;
+        dom.storyModal.classList.remove('hidden');
         dom.storyModal.setAttribute('aria-hidden', 'false');
         dom.storyMetaAvatar.src = getAvatar(story.avatar);
         dom.storyMetaAvatar.alt = escapeHtml(story.username || 'Story user');
@@ -1393,6 +1394,7 @@
         clearStoryAdvanceTimer();
         state.storyViewer.isOpen = false;
         dom.storyModal.hidden = true;
+        dom.storyModal.classList.add('hidden');
         dom.storyModal.setAttribute('aria-hidden', 'true');
         dom.storyVideo.pause();
         dom.storyVideo.onloadedmetadata = null;
