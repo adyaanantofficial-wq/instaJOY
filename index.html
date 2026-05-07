@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-    <meta name="theme-color" content="#f46a3b">
+    <meta name="theme-color" content="#2f8f62">
     <meta name="description" content="instaJOY - Professional Social Media Feed">
     <title>instaJOY - Feed</title>
     <link rel="icon" href="ilogo.png">
@@ -2401,6 +2401,592 @@
             }
         }
     </style>
+    <style>
+        :root {
+            --comfort-bg: #eef6ef;
+            --comfort-bg-strong: #d7eadc;
+            --comfort-panel: rgba(255, 255, 255, 0.92);
+            --comfort-border: rgba(45, 88, 60, 0.14);
+            --comfort-text: #173224;
+            --comfort-subtext: #5a7561;
+            --comfort-accent: #2f8f62;
+            --comfort-accent-strong: #1f6b47;
+            --comfort-soft: #dcefe1;
+        }
+
+        body {
+            background:
+                radial-gradient(circle at top, rgba(255, 255, 255, 0.96) 0%, rgba(234, 245, 236, 0.98) 44%, rgba(216, 232, 220, 1) 100%);
+            color: var(--comfort-text);
+        }
+
+        .app-shell,
+        .main-shell {
+            background: transparent;
+        }
+
+        .splash-screen,
+        .landing-page {
+            background: linear-gradient(135deg, #2f8f62 0%, #69b582 100%);
+        }
+
+        .topbar,
+        .view-intro,
+        .home-top-panel,
+        .suggested-accounts,
+        .profile-summary-card,
+        .suggestion-card,
+        .post-card,
+        .modal-card,
+        .grid-card,
+        .search-item,
+        .notification-item {
+            border-color: var(--comfort-border);
+            box-shadow: 0 18px 42px rgba(28, 62, 40, 0.08);
+        }
+
+        .topbar {
+            background: rgba(247, 251, 248, 0.92);
+            backdrop-filter: blur(18px);
+        }
+
+        .brand-subtitle,
+        .view-intro p,
+        .microcopy,
+        .meta-line,
+        .story-meta-time {
+            color: var(--comfort-subtext);
+        }
+
+        .brand-name,
+        #topbarAction,
+        .story-meta-user {
+            color: var(--comfort-accent-strong);
+        }
+
+        .view-intro,
+        .home-top-panel {
+            background: linear-gradient(180deg, rgba(247, 251, 248, 0.98), rgba(223, 239, 227, 0.92));
+        }
+
+        .mood-chip {
+            background: rgba(247, 251, 248, 0.94);
+            border-color: rgba(47, 143, 98, 0.14);
+            color: var(--comfort-text);
+        }
+
+        .mood-chip.active {
+            background: #ffffff;
+            color: var(--comfort-accent-strong);
+            border-color: rgba(47, 143, 98, 0.32);
+        }
+
+        .story-card.story-action {
+            background: linear-gradient(180deg, #ffffff 0%, #eef6f0 100%);
+        }
+
+        .story-card.story-action.story-link {
+            background: linear-gradient(135deg, rgba(47, 143, 98, 0.12), rgba(220, 239, 225, 0.96));
+        }
+
+        .story-action-badge,
+        .primary-button,
+        .follow-button,
+        .message-send-button {
+            background: linear-gradient(135deg, #2f8f62 0%, #69b582 100%);
+        }
+
+        .messages-shell,
+        .profile-view-shell {
+            padding: 0 16px 16px;
+        }
+
+        .messages-layout {
+            display: grid;
+            grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+            gap: 16px;
+        }
+
+        .conversation-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .conversation-item {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            text-align: left;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--comfort-border);
+        }
+
+        .conversation-item.active {
+            background: linear-gradient(135deg, rgba(47, 143, 98, 0.14), rgba(255, 255, 255, 0.98));
+            border-color: rgba(47, 143, 98, 0.3);
+        }
+
+        .conversation-avatar-wrap {
+            flex-shrink: 0;
+        }
+
+        .conversation-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 18px;
+            object-fit: cover;
+            background: #ffffff;
+            border: 1px solid rgba(45, 88, 60, 0.12);
+        }
+
+        .conversation-main {
+            min-width: 0;
+            flex: 1;
+            display: grid;
+            gap: 6px;
+        }
+
+        .conversation-main-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .conversation-username {
+            color: var(--comfort-text);
+            font-size: 15px;
+        }
+
+        .conversation-time,
+        .conversation-preview {
+            color: var(--comfort-subtext);
+            font-size: 13px;
+        }
+
+        .conversation-preview {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .conversation-badge {
+            min-width: 24px;
+            height: 24px;
+            padding: 0 8px;
+            border-radius: 999px;
+            display: inline-grid;
+            place-items: center;
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 700;
+            background: var(--comfort-accent);
+        }
+
+        .message-panel {
+            padding: 16px;
+            border-radius: 28px;
+            background: rgba(249, 252, 249, 0.96);
+            border: 1px solid var(--comfort-border);
+            box-shadow: 0 24px 54px rgba(24, 54, 35, 0.1);
+        }
+
+        .chat-header-shell {
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            border-radius: 22px;
+            background: rgba(47, 143, 98, 0.08);
+            border: 1px solid rgba(47, 143, 98, 0.12);
+        }
+
+        .chat-header-main,
+        .chat-header-details {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .chat-header-avatar {
+            width: 46px;
+            height: 46px;
+            border-radius: 16px;
+            object-fit: cover;
+        }
+
+        .chat-header-copy h3,
+        .chat-header-copy p {
+            margin: 0;
+        }
+
+        .chat-header-copy p {
+            font-size: 13px;
+            color: var(--comfort-subtext);
+        }
+
+        .message-thread {
+            min-height: 360px;
+            max-height: 58vh;
+            padding: 18px;
+            border-radius: 26px;
+            border: 1px solid var(--comfort-border);
+            background:
+                linear-gradient(180deg, rgba(247, 251, 248, 0.96), rgba(231, 243, 234, 0.98)),
+                radial-gradient(circle at top right, rgba(105, 181, 130, 0.14), transparent 28%);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        .message-thread.empty-thread {
+            display: grid;
+            place-items: center;
+            text-align: center;
+        }
+
+        .message-row {
+            max-width: 78%;
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            padding: 0;
+            background: none;
+            border: none;
+        }
+
+        .message-row.incoming {
+            margin-right: auto;
+        }
+
+        .message-row.outgoing {
+            margin-left: auto;
+            justify-content: flex-end;
+        }
+
+        .chat-bubble-avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            object-fit: cover;
+        }
+
+        .message-bubble {
+            padding: 12px 14px 10px;
+            border-radius: 20px;
+            box-shadow: 0 10px 24px rgba(24, 54, 35, 0.08);
+        }
+
+        .message-row.outgoing .message-bubble {
+            background: linear-gradient(135deg, #dcefe1, #eff8f2);
+            border: 1px solid rgba(47, 143, 98, 0.16);
+            border-bottom-right-radius: 8px;
+        }
+
+        .message-row.incoming .message-bubble {
+            background: #ffffff;
+            border: 1px solid rgba(45, 88, 60, 0.1);
+            border-bottom-left-radius: 8px;
+        }
+
+        .message-text {
+            line-height: 1.55;
+            color: var(--comfort-text);
+            word-break: break-word;
+        }
+
+        .message-bubble .meta-line,
+        .message-meta {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--comfort-subtext);
+            text-align: right;
+        }
+
+        .message-composer {
+            margin-top: 14px;
+            padding: 12px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid var(--comfort-border);
+        }
+
+        .message-composer input {
+            background: transparent;
+        }
+
+        .profile-summary {
+            display: grid;
+            gap: 18px;
+        }
+
+        .profile-hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 22px;
+            padding: 24px;
+            border-radius: 30px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(225, 240, 230, 0.94));
+            border: 1px solid var(--comfort-border);
+            box-shadow: 0 22px 50px rgba(24, 54, 35, 0.09);
+        }
+
+        .profile-identity {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            min-width: 0;
+        }
+
+        .profile-main-avatar {
+            width: 110px;
+            height: 110px;
+            border-radius: 32px;
+            object-fit: cover;
+            border: 3px solid rgba(255, 255, 255, 0.86);
+            background: #ffffff;
+            box-shadow: 0 16px 38px rgba(24, 54, 35, 0.14);
+        }
+
+        .profile-copy {
+            min-width: 0;
+        }
+
+        .profile-eyebrow {
+            display: inline-flex;
+            margin-bottom: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(47, 143, 98, 0.1);
+            color: var(--comfort-accent-strong);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+
+        .profile-name-line {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .profile-name-line h2,
+        .profile-bio {
+            margin: 0;
+        }
+
+        .profile-name-line h2 {
+            font-size: 30px;
+            line-height: 1.08;
+            color: var(--comfort-text);
+        }
+
+        .profile-handle,
+        .profile-section-heading,
+        .profile-text-card-footer {
+            color: var(--comfort-subtext);
+        }
+
+        .profile-handle {
+            font-weight: 600;
+        }
+
+        .profile-bio {
+            max-width: 620px;
+            line-height: 1.65;
+            color: #305240;
+        }
+
+        .profile-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-self: flex-start;
+        }
+
+        .profile-stats {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .stat-card {
+            padding: 16px;
+            border-radius: 24px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid var(--comfort-border);
+        }
+
+        .profile-section-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 4px;
+        }
+
+        .profile-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .profile-media-card,
+        .profile-text-card {
+            min-height: 240px;
+            border-radius: 28px;
+            overflow: hidden;
+            border: 1px solid var(--comfort-border);
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 18px 42px rgba(24, 54, 35, 0.08);
+            text-align: left;
+        }
+
+        .profile-media-card {
+            position: relative;
+            padding: 0;
+        }
+
+        .profile-media-card img,
+        .profile-media-card video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .post-video,
+        .preview-video {
+            width: 100%;
+            background: #0f1e16;
+            border-radius: 22px;
+        }
+
+        .profile-media-card video {
+            background: #0f1e16;
+        }
+
+        .profile-media-overlay {
+            position: absolute;
+            inset: auto 0 0 0;
+            padding: 14px;
+            background: linear-gradient(180deg, transparent, rgba(10, 21, 15, 0.82));
+            color: #ffffff;
+            display: grid;
+            gap: 6px;
+        }
+
+        .profile-card-chip {
+            display: inline-flex;
+            width: fit-content;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.2);
+            font-size: 12px;
+            font-weight: 700;
+            backdrop-filter: blur(10px);
+        }
+
+        .profile-card-caption {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .profile-card-stats,
+        .profile-text-card-footer {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+        }
+
+        .profile-text-card {
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 16px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(232, 243, 235, 0.94));
+        }
+
+        .profile-text-card p {
+            margin: 12px 0 0;
+            line-height: 1.6;
+            color: var(--comfort-text);
+        }
+
+        .profile-empty-state {
+            grid-column: 1 / -1;
+        }
+
+        .story-modal,
+        .story-modal-backdrop {
+            background: rgba(12, 25, 19, 0.66);
+        }
+
+        .story-modal-card {
+            background: rgba(250, 253, 250, 0.97);
+        }
+
+        .story-controls {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            background: rgba(247, 251, 248, 0.96);
+        }
+
+        .story-control-button {
+            background: rgba(220, 239, 225, 0.78);
+            color: var(--comfort-accent-strong);
+        }
+
+        @media (max-width: 900px) {
+            .messages-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .profile-hero {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .profile-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .message-row {
+                max-width: 88%;
+            }
+
+            .profile-main-avatar {
+                width: 92px;
+                height: 92px;
+                border-radius: 28px;
+            }
+
+            .profile-name-line h2 {
+                font-size: 24px;
+            }
+
+            .profile-stats,
+            .profile-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .story-controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
     <div id="splashScreen" class="splash-screen">
@@ -2504,6 +3090,7 @@
                     </div>
                     <div class="story-controls">
                         <button type="button" class="story-control-button" data-action="story-prev">Previous</button>
+                        <button id="storySoundToggle" type="button" class="story-control-button" data-action="toggle-story-sound" hidden>Sound on</button>
                         <button type="button" class="story-control-button" data-action="story-next">Next</button>
                     </div>
                 </div>
@@ -2847,22 +3434,29 @@
                     </div>
                     <button id="messagesRefresh" class="ghost-button compact" type="button">Refresh</button>
                 </div>
-                <div style="padding: 0 16px 16px; display:grid; gap:16px;">
-                    <div id="conversationList" class="stack-list compact-list"></div>
-                    <div class="modal-card" style="padding: 16px;">
-                        <div id="chatHeader" class="panel-header" style="margin-bottom: 12px;">
-                            <div style="display:flex; align-items:center; gap:10px;">
+                <div class="messages-shell">
+                    <div class="messages-layout">
+                        <div id="conversationList" class="conversation-list"></div>
+                        <div class="message-panel">
+                            <div id="chatHeader" class="panel-header chat-header-shell">
+                                <div class="chat-header-main">
                                 <button id="chatBackButton" class="ghost-button compact" type="button" hidden>Back</button>
-                                <h3 style="margin: 0;">Choose a chat</h3>
+                                    <div id="chatHeaderDetails" class="chat-header-details">
+                                        <div class="chat-header-copy">
+                                            <h3 style="margin: 0;">Choose a chat</h3>
+                                            <p style="margin: 0;">Pick a conversation to read and reply.</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
+                            <div id="messageThread" class="message-thread empty-thread">
+                                <p>Select a conversation or start one from Search or Profile.</p>
+                            </div>
+                            <form id="messageComposer" class="message-composer" hidden>
+                                <input id="messageInput" type="text" maxlength="1000" placeholder="Write a message" autocomplete="off">
+                                <button class="message-send-button" type="submit">Send</button>
+                            </form>
                         </div>
-                        <div id="messageThread" class="message-thread empty-thread">
-                            <p>Select a conversation or start one from Search or Profile.</p>
-                        </div>
-                        <form id="messageComposer" class="message-composer" hidden style="margin-top: 16px;">
-                            <input id="messageInput" type="text" maxlength="1000" placeholder="Write a message" autocomplete="off">
-                            <button class="primary-button" type="submit">Send</button>
-                        </form>
                     </div>
                 </div>
             </section>
@@ -2893,8 +3487,10 @@
                     </div>
                     <button id="profileRefresh" class="ghost-button compact" type="button">Refresh</button>
                 </div>
-                <div id="profileSummary" style="padding: 0 16px 16px;"></div>
-                <div id="profileGrid" class="stack-list compact-list" style="padding: 0 16px 16px;"></div>
+                <div class="profile-view-shell">
+                    <div id="profileSummary" class="profile-summary"></div>
+                    <div id="profileGrid" class="profile-grid"></div>
+                </div>
             </section>
         </main>
 

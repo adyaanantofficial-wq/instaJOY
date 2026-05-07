@@ -47,6 +47,7 @@
             advanceTimer: null,
             mode: 'stories',
             chainTitle: '',
+            isMuted: false,
         },
         reels: {
             items: [],
@@ -201,6 +202,7 @@
         dom.storyMetaAvatar = document.getElementById('storyMetaAvatar');
         dom.storyMetaUser = document.getElementById('storyMetaUser');
         dom.storyMetaTime = document.getElementById('storyMetaTime');
+        dom.storySoundToggle = document.getElementById('storySoundToggle');
         dom.homeEmpty = document.getElementById('homeEmpty');
         dom.reelsView = document.getElementById('reelsView');
         dom.reelsFeed = document.getElementById('reelsFeed');
@@ -216,6 +218,7 @@
         dom.conversationList = document.getElementById('conversationList');
         dom.messageThread = document.getElementById('messageThread');
         dom.chatHeader = document.getElementById('chatHeader');
+        dom.chatHeaderDetails = document.getElementById('chatHeaderDetails');
         dom.chatBackButton = document.getElementById('chatBackButton');
         dom.messageComposer = document.getElementById('messageComposer');
         dom.messageInput = document.getElementById('messageInput');
@@ -1356,21 +1359,29 @@
         updateStoryProgressBars(stories.length, safeIndex, durationMs);
 
         if (mediaType === 'video') {
+            state.storyViewer.isMuted = false;
             dom.storyImage.hidden = true;
             dom.storyImage.src = '';
             dom.storyVideo.hidden = false;
-            dom.storyVideo.controls = false;
-            dom.storyVideo.muted = true;
+            dom.storyVideo.controls = true;
+            dom.storyVideo.muted = state.storyViewer.isMuted;
             dom.storyVideo.src = mediaUrl;
             dom.storyVideo.poster = story.thumb || getAvatar(story.avatar);
             dom.storyVideo.currentTime = 0;
+            dom.storyVideo.volume = 1;
+            updateStorySoundToggle();
             dom.storyVideo.onloadedmetadata = () => {
                 const videoDurationMs = Number.isFinite(dom.storyVideo.duration) && dom.storyVideo.duration > 0
                     ? Math.max(3000, Math.min(15000, Math.round(dom.storyVideo.duration * 1000)))
                     : 7000;
                 updateStoryProgressBars(stories.length, safeIndex, videoDurationMs);
                 scheduleStoryAdvance(videoDurationMs);
-                dom.storyVideo.play().catch(() => {});
+                dom.storyVideo.play().catch(() => {
+                    state.storyViewer.isMuted = true;
+                    dom.storyVideo.muted = true;
+                    updateStorySoundToggle();
+                    dom.storyVideo.play().catch(() => {});
+                });
             };
             dom.storyVideo.onended = () => switchStory(1);
             dom.storyVideo.load();
@@ -1378,6 +1389,8 @@
             return;
         }
 
+        state.storyViewer.isMuted = false;
+        updateStorySoundToggle(true);
         dom.storyVideo.pause();
         dom.storyVideo.removeAttribute('src');
         dom.storyVideo.load();
@@ -1393,6 +1406,7 @@
         if (!dom.storyModal || !dom.storyVideo || !dom.storyImage) return;
         clearStoryAdvanceTimer();
         state.storyViewer.isOpen = false;
+        state.storyViewer.isMuted = false;
         dom.storyModal.hidden = true;
         dom.storyModal.classList.add('hidden');
         dom.storyModal.setAttribute('aria-hidden', 'true');
@@ -1403,6 +1417,7 @@
         dom.storyVideo.load();
         dom.storyImage.src = '';
         dom.storyImage.hidden = true;
+        updateStorySoundToggle(true);
         document.body.style.overflow = '';
     }
 
@@ -1455,6 +1470,34 @@
             }
             switchStory(1);
         }, Math.max(1500, durationMs || 5000));
+    }
+
+    function updateStorySoundToggle(forceHidden) {
+        if (!dom.storySoundToggle) {
+            return;
+        }
+
+        const isHidden = Boolean(forceHidden || dom.storyVideo?.hidden);
+        dom.storySoundToggle.hidden = isHidden;
+        if (isHidden) {
+            return;
+        }
+
+        dom.storySoundToggle.textContent = state.storyViewer.isMuted ? 'Sound on' : 'Mute';
+    }
+
+    function toggleStorySound() {
+        if (!dom.storyVideo || dom.storyVideo.hidden) {
+            return;
+        }
+
+        state.storyViewer.isMuted = !state.storyViewer.isMuted;
+        dom.storyVideo.muted = state.storyViewer.isMuted;
+        if (!state.storyViewer.isMuted) {
+            dom.storyVideo.volume = 1;
+        }
+        dom.storyVideo.play().catch(() => {});
+        updateStorySoundToggle();
     }
 
     function updateStoryProgressBars(total, activeIndex, durationMs) {
@@ -2087,8 +2130,9 @@
 
     function renderConversations() {
         if (!dom.conversationList) return;
-        
+
         const conversations = state.messages.conversations;
+        dom.conversationList.className = 'conversation-list';
 
         if (!conversations.length) {
             dom.conversationList.innerHTML = `<div class="empty-state">No conversations yet. Start one from Search or Profile.</div>`;
@@ -2098,14 +2142,22 @@
         dom.conversationList.innerHTML = conversations
             .map((conversation) => {
                 const active = state.messages.activeUser && state.messages.activeUser.id === conversation.user.id;
+                const unreadBadge = conversation.unreadCount
+                    ? `<span class="conversation-badge">${escapeHtml(String(conversation.unreadCount))}</span>`
+                    : '';
                 return `
                     <button class="conversation-item ${active ? 'active' : ''}" type="button" data-action="open-conversation" data-user-id="${conversation.user.id}">
-                        <img class="avatar small" src="${getAvatar(conversation.user.profileImage)}" alt="${escapeHtml(conversation.user.username)}" onerror="this.src='ilogo.png'">
-                        <div class="conversation-main">
-                            <strong>${escapeHtml(conversation.user.username)}</strong>
-                            <div class="meta-line">${escapeHtml(truncateText(conversation.lastMessage.text, 62))}</div>
+                        <div class="conversation-avatar-wrap">
+                            <img class="conversation-avatar" src="${getAvatar(conversation.user.profileImage)}" alt="${escapeHtml(conversation.user.username)}" onerror="this.src='ilogo.png'">
                         </div>
-                        <div class="meta-line">${conversation.unreadCount ? `${conversation.unreadCount} new` : formatShortDate(conversation.lastMessage.createdAt)}</div>
+                        <div class="conversation-main">
+                            <div class="conversation-main-head">
+                                <strong class="conversation-username">${escapeHtml(conversation.user.username)}</strong>
+                                <span class="conversation-time">${conversation.unreadCount ? 'New' : formatShortDate(conversation.lastMessage.createdAt)}</span>
+                            </div>
+                            <div class="conversation-preview">${escapeHtml(truncateText(conversation.lastMessage.text, 62))}</div>
+                        </div>
+                        ${unreadBadge}
                     </button>
                 `;
             })
@@ -2145,13 +2197,17 @@
     }
 
     function renderActiveConversation() {
-        if (!dom.messageThread || !dom.messageComposer || !dom.chatHeader || !dom.chatBackButton) return;
+        if (!dom.messageThread || !dom.messageComposer || !dom.chatHeader || !dom.chatBackButton || !dom.chatHeaderDetails) return;
         
         const activeUser = state.messages.activeUser;
 
         if (!activeUser) {
-            const chatHeaderH3 = dom.chatHeader.querySelector('h3');
-            if (chatHeaderH3) chatHeaderH3.textContent = 'Choose a chat';
+            dom.chatHeaderDetails.innerHTML = `
+                <div class="chat-header-copy">
+                    <h3>Choose a chat</h3>
+                    <p>Pick a conversation to read and reply.</p>
+                </div>
+            `;
             dom.chatBackButton.hidden = true;
             dom.messageThread.className = 'message-thread empty-thread';
             dom.messageThread.innerHTML = '<p>Select a conversation or start one from Search or Profile.</p>';
@@ -2159,10 +2215,16 @@
             return;
         }
 
-        const chatHeaderH3 = dom.chatHeader.querySelector('h3');
-        if (chatHeaderH3) chatHeaderH3.textContent = activeUser.username;
+        dom.chatHeaderDetails.innerHTML = `
+            <img class="chat-header-avatar" src="${getAvatar(activeUser.profileImage || activeUser.avatar)}" alt="${escapeHtml(activeUser.username)}" onerror="this.src='ilogo.png'">
+            <div class="chat-header-copy">
+                <h3>${escapeHtml(activeUser.username)}</h3>
+                <p>Direct conversation</p>
+            </div>
+        `;
         dom.chatBackButton.hidden = window.innerWidth > 819;
         dom.messageComposer.hidden = false;
+        dom.messageInput.placeholder = `Message ${activeUser.username}`;
 
         const messages = state.messages.threads[activeUser.id] || [];
         if (!messages.length) {
@@ -2175,16 +2237,44 @@
         dom.messageThread.innerHTML = messages
             .map((message) => {
                 const outgoing = message.senderId === state.session.user.id;
+                const incomingAvatar = !outgoing
+                    ? `<img class="chat-bubble-avatar" src="${getAvatar(activeUser.profileImage || activeUser.avatar)}" alt="${escapeHtml(activeUser.username)}" onerror="this.src='ilogo.png'">`
+                    : '';
+                const seenLabel = outgoing && message.readAt ? ' seen' : '';
                 return `
                     <div class="message-row ${outgoing ? 'outgoing' : 'incoming'}">
-                        <div>${escapeHtml(message.text)}</div>
+                        ${incomingAvatar}
+                        <div class="message-bubble">
+                            <div class="message-text">${escapeHtml(message.text)}</div>
                         <div class="meta-line">${formatDateTime(message.createdAt)}${outgoing && message.readAt ? ' • seen' : ''}</div>
                     </div>
                 `;
             })
             .join('');
 
+        dom.messageThread.innerHTML = messages
+            .map((message) => renderConversationMessageRow(message, activeUser))
+            .join('');
+
         dom.messageThread.scrollTop = dom.messageThread.scrollHeight;
+    }
+
+    function renderConversationMessageRow(message, activeUser) {
+        const outgoing = message.senderId === state.session.user.id;
+        const incomingAvatar = !outgoing
+            ? `<img class="chat-bubble-avatar" src="${getAvatar(activeUser.profileImage || activeUser.avatar)}" alt="${escapeHtml(activeUser.username)}" onerror="this.src='ilogo.png'">`
+            : '';
+        const seenLabel = outgoing && message.readAt ? ' seen' : '';
+
+        return `
+            <div class="message-row ${outgoing ? 'outgoing' : 'incoming'}">
+                ${incomingAvatar}
+                <div class="message-bubble">
+                    <div class="message-text">${escapeHtml(message.text)}</div>
+                    <div class="meta-line">${formatDateTime(message.createdAt)}${seenLabel}</div>
+                </div>
+            </div>
+        `;
     }
 
     async function handleMessageSubmit(event) {
@@ -2353,54 +2443,93 @@
             return;
         }
 
+        const displayName = profile.displayName || profile.username;
+        const bio = profile.bio || (profile.isOwnProfile ? 'Share a short intro so your stories and posts feel more personal.' : 'No bio shared yet.');
+        const profileActions = profile.isOwnProfile
+            ? `<button class="primary-button" type="button" data-action="edit-profile">Edit profile</button>
+               <button class="secondary-button" type="button" data-action="logout">Log out</button>`
+            : `<button class="primary-button" type="button" data-action="${profile.isFollowing ? 'unfollow-user' : 'follow-user'}" data-user-id="${profile.id}">
+                    ${profile.isFollowing ? 'Following' : 'Follow'}
+               </button>
+               <button class="secondary-button" type="button" data-action="message-user" data-user-id="${profile.id}" data-username="${profile.username}" data-profile-image="${escapeHtml(profile.profileImage || '')}">Message</button>`;
+
         dom.profileSummary.innerHTML = `
-            <div class="profile-top">
-                <img class="profile-avatar" src="${getAvatar(profile.profileImage)}" alt="${escapeHtml(profile.username)}">
-                <div class="profile-title">
-                    <h2>${escapeHtml(profile.username)}</h2>
-                    <div class="microcopy">${escapeHtml(profile.bio || 'A little bio can live here.')}</div>
+            <section class="profile-hero">
+                <div class="profile-identity">
+                    <img class="profile-main-avatar" src="${getAvatar(profile.profileImage)}" alt="${escapeHtml(profile.username)}" onerror="this.src='ilogo.png'">
+                    <div class="profile-copy">
+                        <span class="profile-eyebrow">${profile.isOwnProfile ? 'Your profile' : 'Creator profile'}</span>
+                        <div class="profile-name-line">
+                            <h2>${escapeHtml(displayName)}</h2>
+                            <span class="profile-handle">@${escapeHtml(profile.username)}</span>
+                        </div>
+                        <p class="profile-bio">${escapeHtml(bio)}</p>
+                    </div>
                 </div>
-            </div>
+                <div class="profile-actions">
+                    ${profileActions}
+                </div>
+            </section>
             <div class="profile-stats">
                 <div class="stat-card"><strong>${profile.postCount}</strong><span>Posts</span></div>
                 <div class="stat-card"><strong>${profile.reelCount}</strong><span>Reels</span></div>
                 <div class="stat-card"><strong>${profile.followerCount}</strong><span>Followers</span></div>
                 <div class="stat-card"><strong>${profile.followingCount}</strong><span>Following</span></div>
             </div>
-            <div class="search-actions">
-                ${
-                    profile.isOwnProfile
-                        ? `<button class="primary-button" type="button" data-action="edit-profile">Edit profile</button>
-                           <button class="secondary-button" type="button" data-action="logout">Log out</button>`
-                        : `<button class="primary-button" type="button" data-action="${profile.isFollowing ? 'unfollow-user' : 'follow-user'}" data-user-id="${profile.id}">
-                                ${profile.isFollowing ? 'Unfollow' : 'Follow'}
-                           </button>
-                           <button class="secondary-button" type="button" data-action="message-user" data-user-id="${profile.id}" data-username="${profile.username}">Message</button>`
-                }
+            <div class="profile-section-heading">
+                <strong>${profile.isOwnProfile ? 'Your recent posts' : `${escapeHtml(displayName)}'s posts`}</strong>
+                <span>${state.profile.posts.length} items</span>
             </div>
         `;
 
+        dom.profileGrid.className = 'profile-grid';
         if (!state.profile.posts.length) {
-            dom.profileGrid.innerHTML = '<div class="empty-state">No posts yet.</div>';
+            dom.profileGrid.innerHTML = '<div class="empty-state profile-empty-state">No posts yet.</div>';
             return;
         }
 
         dom.profileGrid.innerHTML = state.profile.posts
             .map((post) => {
-                if (post.type === 'image' && post.imageData) {
+                const caption = post.caption || post.text || 'Tap to open';
+
+                if (post.videoData) {
                     return `
-                        <button class="grid-card image-card" type="button" data-action="focus-post" data-post-id="${post.id}">
-                            <img src="${post.imageData}" alt="${escapeHtml(post.text || 'Post image')}" loading="lazy">
+                        <button class="profile-media-card" type="button" data-action="focus-post" data-post-id="${post.id}">
+                            <video src="${post.videoData}" muted playsinline preload="metadata"></video>
+                            <div class="profile-media-overlay">
+                                <span class="profile-card-chip">Video</span>
+                                <p class="profile-card-caption">${escapeHtml(truncateText(caption, 72))}</p>
+                                <div class="profile-card-stats">
+                                    <span>${post.likeCount} likes</span>
+                                    <span>${post.commentCount} comments</span>
+                                </div>
+                            </div>
+                        </button>
+                    `;
+                }
+
+                if (post.imageData) {
+                    return `
+                        <button class="profile-media-card" type="button" data-action="focus-post" data-post-id="${post.id}">
+                            <img src="${post.imageData}" alt="${escapeHtml(caption || 'Post image')}" loading="lazy">
+                            <div class="profile-media-overlay">
+                                <span class="profile-card-chip">Photo</span>
+                                <p class="profile-card-caption">${escapeHtml(truncateText(caption, 72))}</p>
+                                <div class="profile-card-stats">
+                                    <span>${post.likeCount} likes</span>
+                                    <span>${post.commentCount} comments</span>
+                                </div>
+                            </div>
                         </button>
                     `;
                 }
 
                 return `
-                    <button class="grid-card" type="button" data-action="focus-post" data-post-id="${post.id}">
+                    <button class="profile-text-card" type="button" data-action="focus-post" data-post-id="${post.id}">
                         <div class="grid-text">
                             <span class="post-badge">${escapeHtml(formatCategory(post.category || 'text'))}</span>
-                            <p>${escapeHtml(truncateText(post.text, 160))}</p>
-                            <div class="post-grid-copy">
+                            <p>${escapeHtml(truncateText(post.text || caption, 160))}</p>
+                            <div class="profile-text-card-footer">
                                 <span>${post.likeCount} likes</span>
                                 <span>${post.commentCount} comments</span>
                             </div>
@@ -2796,13 +2925,15 @@
             });
 
             closeModal(dom.profileEditModal);
-            await loadProfile(state.session.user.username, true);
-            state.session.user = {
-                ...state.session.user,
-                profileImage: state.profile.data.profileImage,
-                bio: state.profile.data.bio,
-            };
-            persistSession();
+            await syncSupabaseSessionState();
+            syncCurrentUserPresentation();
+            await Promise.all([
+                loadProfile(state.session.user.username, true),
+                fetchStories(true),
+            ]);
+            syncCurrentUserPresentation();
+            renderHomeFeed();
+            renderReels();
             showToast('Profile updated.', 'success');
         } catch (error) {
             showToast(error.message || 'Could not update profile', 'error');
@@ -3139,6 +3270,11 @@
             return;
         }
 
+        if (action === 'toggle-story-sound') {
+            toggleStorySound();
+            return;
+        }
+
         if (action === 'close-story') {
             closeStoryViewer();
             return;
@@ -3305,6 +3441,7 @@
         const author = post.author || {};
         const text = post.text || post.content?.text || '';
         const image = post.imageData || post.content?.image || '';
+        const video = post.videoData || post.content?.video || '';
         const timestamp = post.createdAt || post.timestamp || new Date();
         const likeCount = post.likeCount ?? post.likes ?? 0;
         const commentCount = post.commentCount ?? post.comments ?? 0;
@@ -3317,7 +3454,9 @@
         const showDelete = author.id === state.session.user?.id && !compact;
 
         const textContent = text ? `<p class="post-text">${escapeHtml(text)}</p>` : '';
-        const imageContent = image
+        const mediaContent = video
+            ? `<video class="${compact ? 'preview-video' : 'post-media post-video'}" src="${video}" controls playsinline preload="metadata"></video>`
+            : image
             ? `<img class="${compact ? 'preview-image' : 'post-media'}" src="${image}" alt="${escapeHtml(text || 'instaJOY post image')}" loading="lazy" onerror="this.style.display='none'">`
             : '';
         const badge = post.category ? `<span class="post-badge">${escapeHtml(formatCategory(post.category))}</span>` : '';
@@ -3357,7 +3496,7 @@
                 </div>
                 <div class="card-body">
                     ${badge}
-                    ${imageContent}
+                    ${mediaContent}
                     ${textContent}
                 </div>
                 <div class="post-engagement-stats">
@@ -3428,14 +3567,17 @@
 
     function renderStories() {
         if (!dom.storiesShell) return;
+        const ownStoryIndex = findOwnStoryIndex();
+        const ownStory = ownStoryIndex >= 0 ? state.stories.items[ownStoryIndex] : null;
         const staticItems = [
             {
                 label: 'Your story',
                 className: 'story-create',
-                action: 'open-story-create',
+                action: ownStory ? 'open-story' : 'open-story-create',
+                storyIndex: ownStoryIndex,
                 content: `
-                    <img class="story-avatar story-action-avatar" src="${getAvatar(state.session.user?.profileImage || state.session.user?.avatar)}" alt="Your story" onerror="this.src='ilogo.png'">
-                    <span class="story-action-badge">+</span>
+                    <img class="story-avatar story-action-avatar" src="${getCurrentUserAvatar()}" alt="Your story" onerror="this.src='ilogo.png'">
+                    ${ownStory ? '' : '<span class="story-action-badge">+</span>'}
                 `,
             },
             {
@@ -3446,7 +3588,10 @@
             },
         ];
 
-        const dynamicItems = (state.stories.items || []).map((story, index) => `
+        const dynamicItems = (state.stories.items || [])
+            .map((story, index) => ({ story, index }))
+            .filter(({ index }) => index !== ownStoryIndex)
+            .map(({ story, index }) => `
             <div class="story-item">
                 <button class="story-card story-ring" type="button" data-action="open-story" data-story-index="${index}" aria-label="Open story from ${escapeHtml(story.username || 'story')}">
                     <img class="story-avatar" src="${getAvatar(story.avatar)}" alt="${escapeHtml(story.username)}" onerror="this.src='ilogo.png'">
@@ -3457,7 +3602,7 @@
 
         dom.storiesShell.innerHTML = staticItems.map((item) => `
             <div class="story-item">
-                <button class="story-card story-action ${item.className || ''}" type="button" data-action="${item.action}" aria-label="${item.label}">
+                <button class="story-card story-action ${item.className || ''}" type="button" data-action="${item.action}" ${item.storyIndex >= 0 ? `data-story-index="${item.storyIndex}"` : ''} aria-label="${item.label}">
                     ${item.content}
                 </button>
                 <div class="story-label">${item.label}</div>
@@ -3829,11 +3974,15 @@
         const profilesMap = await fetchProfilesMapByIds(storyRows.map((row) => row.user_id));
         return storyRows.map((story) => {
             const profile = profilesMap.get(story.user_id);
+            const isCurrentUserStory = story.user_id && story.user_id === state.session.user?.id;
+            const sessionAvatar = state.session.user?.profileImage || state.session.user?.avatar || DEFAULT_AVATAR;
+            const sessionUsername = state.session.user?.username || 'instaJOY';
             return {
                 id: story.id,
-                username: profile?.username || 'instaJOY',
-                avatar: profile?.avatar_url || DEFAULT_AVATAR,
-                thumb: profile?.avatar_url || DEFAULT_AVATAR,
+                userId: story.user_id || null,
+                username: profile?.username || (isCurrentUserStory ? sessionUsername : 'instaJOY'),
+                avatar: profile?.avatar_url || (isCurrentUserStory ? sessionAvatar : DEFAULT_AVATAR),
+                thumb: profile?.avatar_url || (isCurrentUserStory ? sessionAvatar : DEFAULT_AVATAR),
                 type: inferStoryMediaType(story.type, story.media_url),
                 mediaUrl: story.media_url,
                 video: story.media_url,
@@ -4176,6 +4325,71 @@
             bio: data.bio || '',
             profileImage: data.avatar_url || DEFAULT_AVATAR,
         };
+    }
+
+    function getCurrentUserAvatar() {
+        return getAvatar(
+            (state.profile.data?.isOwnProfile ? state.profile.data.profileImage : null)
+            || state.session.user?.profileImage
+            || state.session.user?.avatar
+            || DEFAULT_AVATAR
+        );
+    }
+
+    function findOwnStoryIndex() {
+        const stories = state.stories.items || [];
+        const sessionUserId = state.session.user?.id || '';
+        const sessionUsername = String(state.session.user?.username || '').trim().toLowerCase();
+
+        return stories.findIndex((story) => {
+            if (!story) {
+                return false;
+            }
+            if (sessionUserId && story.userId === sessionUserId) {
+                return true;
+            }
+            return Boolean(sessionUsername) && String(story.username || '').trim().toLowerCase() === sessionUsername;
+        });
+    }
+
+    function syncCurrentUserPresentation() {
+        const currentUserId = state.session.user?.id;
+        const currentUsername = state.session.user?.username || '';
+        const currentAvatar = getCurrentUserAvatar();
+
+        if (!currentUserId) {
+            return;
+        }
+
+        const syncAuthor = (item) => {
+            if (!item?.author || item.author.id !== currentUserId) {
+                return item;
+            }
+
+            return {
+                ...item,
+                author: {
+                    ...item.author,
+                    username: currentUsername || item.author.username,
+                    profileImage: currentAvatar,
+                    avatar: currentAvatar,
+                },
+            };
+        };
+
+        state.home.items = (state.home.items || []).map(syncAuthor);
+        state.reels.items = (state.reels.items || []).map(syncAuthor);
+        state.profile.posts = (state.profile.posts || []).map(syncAuthor);
+        state.stories.items = (state.stories.items || []).map((story) => (
+            story.userId === currentUserId
+                ? {
+                    ...story,
+                    username: currentUsername || story.username,
+                    avatar: currentAvatar,
+                    thumb: currentAvatar,
+                }
+                : story
+        ));
     }
 
     async function apiRequest(path, options) {
