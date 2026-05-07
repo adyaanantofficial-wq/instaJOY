@@ -10,7 +10,18 @@
     const MAX_REEL_BYTES = 1024 * 1024;
     const MAX_REEL_DURATION = 30;
     const MAX_AVATAR_BYTES = 180 * 1024;
-    const TEXT_POST_CATEGORIES = ['jokes', 'ideas', 'fun-knowledge'];
+    const TEXT_POST_CATEGORIES = ['happy', 'motivation', 'calm', 'music', 'fun', 'learn', 'explore', 'mixed'];
+    const MESSAGE_PAGE_FILE = 'massage.html';
+    const MOOD_CATEGORY_META = Object.freeze({
+        happy: { label: 'Happy', emoji: '😄' },
+        motivation: { label: 'Motivation', emoji: '🔥' },
+        calm: { label: 'Calm', emoji: '😌' },
+        music: { label: 'Music', emoji: '🎵' },
+        fun: { label: 'Fun', emoji: '😂' },
+        learn: { label: 'Learn', emoji: '📚' },
+        explore: { label: 'Explore', emoji: '🌍' },
+        mixed: { label: 'Mixed', emoji: '⭐' },
+    });
 
     const state = {
         authMode: 'login',
@@ -190,6 +201,9 @@
         dom.homeFeed = document.getElementById('homeFeed');
         dom.homeLoadMore = document.getElementById('homeLoadMore');
         dom.homeEmpty = document.getElementById('homeEmpty');
+        dom.profileSidebarAvatar = document.getElementById('profileSidebarAvatar');
+        dom.profileSidebarName = document.getElementById('profileSidebarName');
+        dom.profileSidebarRole = document.getElementById('profileSidebarRole');
         dom.suggestionList = document.getElementById('suggestionList') || document.getElementById('suggestedFollowList');
         dom.refreshSuggestionsBtn = document.getElementById('refreshSuggestionsBtn') || document.querySelector('[data-action="refresh-suggestions"]');
         dom.storiesShell = document.getElementById('storiesShell') || document.getElementById('storiesStrip');
@@ -657,6 +671,7 @@
             btn.hidden = false;
         });
 
+        syncCurrentUserPresentation();
         await fetchStories();
         await syncUnreadNotificationCount();
         await ensureRealtimeSubscriptions();
@@ -1110,16 +1125,18 @@
 
         dom.suggestionList.innerHTML = items.map((user) => `
             <article class="suggestion-card" data-user-id="${user.id}">
-                <div class="suggestion-details">
-                    <img class="avatar small" src="${user.avatar || DEFAULT_AVATAR}" alt="${user.username} avatar">
-                    <div class="suggestion-copy">
+                <button class="suggestion-profile-button" type="button" data-action="open-profile" data-username="${escapeHtml(user.username)}" aria-label="Open ${escapeHtml(user.username)} profile">
+                    <img class="suggestion-avatar" src="${user.avatar || DEFAULT_AVATAR}" alt="${user.username} avatar">
+                </button>
+                <div class="suggestion-info">
                         <strong>${user.username}</strong>
                         <span>${user.title || 'Recommended social creator'}</span>
-                        <span class="suggestion-meta">${user.mutuals || 0} mutual connections</span>
+                        <span class="suggestion-meta">${user.mutuals > 0 ? `${user.mutuals} mutual connections` : 'Fresh recommendation'}</span>
                         <span>${user.bio || 'A curated recommendation to broaden your network.'}</span>
-                    </div>
                 </div>
                 <div class="suggestion-actions">
+                    <button class="ghost-button compact" type="button" data-action="open-profile" data-username="${escapeHtml(user.username)}">Profile</button>
+                    <button class="ghost-button compact" type="button" data-action="message-user" data-user-id="${user.id}" data-username="${escapeHtml(user.username)}" data-profile-image="${escapeHtml(user.avatar || DEFAULT_AVATAR)}">Message</button>
                     <button class="follow-button ${user.following ? 'following' : ''}" type="button" data-action="follow" data-user-id="${user.id}">
                         ${user.following ? 'Following' : 'Follow'}
                     </button>
@@ -1166,18 +1183,51 @@
         }
     }
 
-    function handleFriendSuggestionClick(event) {
+    function syncSuggestionFollowState(userId, following) {
+        state.suggestions.items = (state.suggestions.items || []).map((item) => (
+            item.id === userId ? { ...item, following } : item
+        ));
+        renderFriendSuggestions();
+    }
+
+    async function handleFriendSuggestionClick(event) {
         const button = event.target.closest('button[data-action="follow"]');
         if (!button) return;
+
+        if (!requireLogin('following creators')) {
+            return;
+        }
 
         const userId = button.dataset.userId;
         const selected = state.suggestions.items.find((item) => item.id === userId);
         if (!selected) return;
+        const nextFollowing = !selected.following;
 
-        selected.following = !selected.following;
-        button.textContent = selected.following ? 'Following' : 'Follow';
-        button.classList.toggle('following', selected.following);
-        showToast(selected.following ? `Following ${selected.username}` : `Unfollowed ${selected.username}`, 'success');
+        button.disabled = true;
+
+        try {
+            if (selected.following) {
+                await apiRequest(`/follows/${userId}`, { method: 'DELETE' });
+            } else {
+                await apiRequest(`/follows/${userId}`, { method: 'POST' });
+            }
+
+            syncSuggestionFollowState(userId, nextFollowing);
+            if (state.profile.data?.id === userId) {
+                state.profile.data = {
+                    ...state.profile.data,
+                    isFollowing: nextFollowing,
+                    followerCount: Math.max(0, Number(state.profile.data.followerCount || 0) + (nextFollowing ? 1 : -1)),
+                };
+                renderProfile();
+            }
+
+            showToast(nextFollowing ? `Following ${selected.username}` : `Unfollowed ${selected.username}`, 'success');
+        } catch (error) {
+            showToast(error.message || 'Could not update follow status.', 'error');
+        } finally {
+            button.disabled = false;
+        }
     }
 
     function renderFeedSkeleton(count = 2) {
@@ -2509,11 +2559,14 @@
                 }
 
                 if (post.imageData) {
+                    const mediaChip = Array.isArray(post.carouselUrls) && post.carouselUrls.length > 1
+                        ? `Carousel • ${post.carouselUrls.length}`
+                        : 'Photo';
                     return `
                         <button class="profile-media-card" type="button" data-action="focus-post" data-post-id="${post.id}">
                             <img src="${post.imageData}" alt="${escapeHtml(caption || 'Post image')}" loading="lazy">
                             <div class="profile-media-overlay">
-                                <span class="profile-card-chip">Photo</span>
+                                <span class="profile-card-chip">${mediaChip}</span>
                                 <p class="profile-card-caption">${escapeHtml(truncateText(caption, 72))}</p>
                                 <div class="profile-card-stats">
                                     <span>${post.likeCount} likes</span>
@@ -3147,6 +3200,7 @@
     async function followUser(userId) {
         try {
             await apiRequest(`/follows/${userId}`, { method: 'POST' });
+            syncSuggestionFollowState(userId, true);
             await loadProfile(state.profile.username, true);
             showToast('Followed successfully.', 'success');
         } catch (error) {
@@ -3157,6 +3211,7 @@
     async function unfollowUser(userId) {
         try {
             await apiRequest(`/follows/${userId}`, { method: 'DELETE' });
+            syncSuggestionFollowState(userId, false);
             await loadProfile(state.profile.username, true);
             showToast('Unfollowed successfully.', 'success');
         } catch (error) {
@@ -3179,6 +3234,26 @@
         }
     }
 
+    function buildMessagesPageUrl(options = {}) {
+        const inFrontendDirectory = /\/frontend\//i.test(window.location.pathname || '');
+        const relativePath = `${inFrontendDirectory ? '../' : './'}${MESSAGE_PAGE_FILE}`;
+        const url = new URL(relativePath, window.location.href);
+        if (options.userId) {
+            url.searchParams.set('user', options.userId);
+        }
+        if (options.username) {
+            url.searchParams.set('username', options.username);
+        }
+        if (options.profileImage) {
+            url.searchParams.set('avatar', options.profileImage);
+        }
+        return url.toString();
+    }
+
+    function openMessagesPage(options = {}) {
+        window.location.href = buildMessagesPageUrl(options);
+    }
+
     async function handleBodyClick(event) {
         const target = event.target.closest('[data-action], [data-view], [data-close-modal], [data-create-type]');
 
@@ -3190,6 +3265,10 @@
         }
 
         if (target.dataset.view) {
+            if (target.dataset.view === 'messages') {
+                openMessagesPage();
+                return;
+            }
             if (target.dataset.view === 'profile' && state.session.user) {
                 state.profile.username = state.session.user.username;
             }
@@ -3305,6 +3384,15 @@
             return;
         }
 
+        if (action === 'open-create-post') {
+            if (window.PostCreator) {
+                window.PostCreator.openModal();
+            } else {
+                openCreateModal();
+            }
+            return;
+        }
+
         if (action === 'follow') {
             handleFriendSuggestionClick(event);
             return;
@@ -3320,13 +3408,11 @@
         }
 
         if (action === 'message-user') {
-            await switchView('messages');
-            await openConversation({
-                id: target.dataset.userId,
+            openMessagesPage({
+                userId: target.dataset.userId,
                 username: target.dataset.username,
-                profileImage: target.dataset.profileImage || null,
+                profileImage: target.dataset.profileImage || '',
             });
-            window.location.hash = `messages-${target.dataset.userId}`;
             return;
         }
 
@@ -3442,6 +3528,7 @@
         const text = post.text || post.content?.text || '';
         const image = post.imageData || post.content?.image || '';
         const video = post.videoData || post.content?.video || '';
+        const carouselUrls = Array.isArray(post.carouselUrls) ? post.carouselUrls : [];
         const timestamp = post.createdAt || post.timestamp || new Date();
         const likeCount = post.likeCount ?? post.likes ?? 0;
         const commentCount = post.commentCount ?? post.comments ?? 0;
@@ -3456,6 +3543,19 @@
         const textContent = text ? `<p class="post-text">${escapeHtml(text)}</p>` : '';
         const mediaContent = video
             ? `<video class="${compact ? 'preview-video' : 'post-media post-video'}" src="${video}" controls playsinline preload="metadata"></video>`
+            : carouselUrls.length > 1
+            ? `
+                <div class="post-carousel" aria-label="Photo carousel">
+                    <div class="post-carousel-track">
+                        ${carouselUrls.map((url, index) => `
+                            <div class="post-carousel-slide">
+                                <img class="${compact ? 'preview-image' : 'post-media post-image'}" src="${url}" alt="${escapeHtml((text || post.caption || 'Carousel photo') + ` ${index + 1}`)}" loading="lazy" onerror="this.style.display='none'">
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="post-carousel-index">${carouselUrls.length} photos</div>
+                </div>
+            `
             : image
             ? `<img class="${compact ? 'preview-image' : 'post-media'}" src="${image}" alt="${escapeHtml(text || 'instaJOY post image')}" loading="lazy" onerror="this.style.display='none'">`
             : '';
@@ -4043,13 +4143,35 @@
         });
     }
 
+    function parsePostContentMeta(post) {
+        if (!post || typeof post.content !== 'string') {
+            return null;
+        }
+
+        const raw = String(post.content || '').trim();
+        if (!raw.startsWith('{')) {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
     function normalizeSupabasePostRow(post, interactionState) {
         const likedIds = interactionState?.likedIds || new Set();
         const reactionMap = interactionState?.reactionMap || {};
-        const text = post?.content || post?.caption || '';
+        const contentMeta = parsePostContentMeta(post);
+        const text = String(contentMeta?.text || post?.content || post?.caption || '');
         const likeCount = Number((post?.like_count ?? post?.likeCount ?? post?.likes?.[0]?.count) || 0);
         const commentCount = Number((post?.comment_count ?? post?.commentCount ?? post?.comments?.[0]?.count) || 0);
         const profile = post?.profiles || post?.profile || {};
+        const carouselUrls = Array.isArray(contentMeta?.carousel_urls)
+            ? contentMeta.carousel_urls.filter((url) => typeof url === 'string' && url.trim())
+            : [];
 
         return {
             id: post.id,
@@ -4059,6 +4181,7 @@
             caption: post.caption || text,
             imageData: post.image_url || '',
             videoData: post.media_url || '',
+            carouselUrls,
             createdAt: post.created_at,
             timestamp: post.created_at,
             likeCount,
@@ -4390,6 +4513,16 @@
                 }
                 : story
         ));
+
+        if (dom.profileSidebarAvatar) {
+            dom.profileSidebarAvatar.src = currentAvatar;
+        }
+        if (dom.profileSidebarName) {
+            dom.profileSidebarName.textContent = currentUsername || 'instaJOY';
+        }
+        if (dom.profileSidebarRole) {
+            dom.profileSidebarRole.textContent = currentUsername ? `@${currentUsername}` : 'Your social feed';
+        }
     }
 
     async function apiRequest(path, options) {
@@ -5029,6 +5162,10 @@
     }
 
     function formatCategory(category) {
+        const key = String(category || '').trim().toLowerCase();
+        if (MOOD_CATEGORY_META[key]) {
+            return `${MOOD_CATEGORY_META[key].emoji} ${MOOD_CATEGORY_META[key].label}`;
+        }
         return String(category || '')
             .replace(/-/g, ' ')
             .replace(/\b\w/g, (letter) => letter.toUpperCase());

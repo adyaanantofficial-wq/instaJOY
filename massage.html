@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>instaJOY Messages</title>
+    <style>
+        :root {
+            --page-bg: linear-gradient(180deg, #edf6ef 0%, #f8fbf7 100%);
+            --card-bg: rgba(255, 255, 255, 0.94);
+            --soft-bg: rgba(240, 248, 242, 0.95);
+            --line: rgba(32, 79, 49, 0.12);
+            --text: #163224;
+            --muted: #587063;
+            --accent: #2f8f62;
+            --accent-strong: #1f6d49;
+            --shadow: 0 24px 56px rgba(24, 54, 35, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: var(--text);
+            background: var(--page-bg);
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        .page-shell {
+            min-height: 100vh;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 18px;
+            background: rgba(248, 252, 249, 0.92);
+            border-bottom: 1px solid var(--line);
+            backdrop-filter: blur(16px);
+        }
+
+        .topbar-main {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .brand-avatar,
+        .chat-avatar,
+        .conversation-avatar,
+        .profile-mini-avatar {
+            object-fit: cover;
+            background: #ffffff;
+            border: 1px solid rgba(20, 48, 32, 0.08);
+        }
+
+        .brand-avatar {
+            width: 46px;
+            height: 46px;
+            border-radius: 16px;
+        }
+
+        .topbar-copy h1,
+        .topbar-copy p,
+        .chat-copy h2,
+        .chat-copy p {
+            margin: 0;
+        }
+
+        .topbar-copy h1 {
+            font-size: 20px;
+        }
+
+        .topbar-copy p,
+        .chat-copy p,
+        .conversation-preview,
+        .conversation-time,
+        .thread-meta,
+        .empty-copy,
+        .status-bar {
+            color: var(--muted);
+        }
+
+        .topbar-actions,
+        .chat-actions,
+        .composer-actions,
+        .bottom-nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ghost-btn,
+        .primary-btn,
+        .nav-link {
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.88);
+            color: var(--text);
+            text-decoration: none;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .primary-btn {
+            background: linear-gradient(135deg, var(--accent), #69b582);
+            color: #ffffff;
+            border-color: transparent;
+        }
+
+        .ghost-btn:hover,
+        .primary-btn:hover,
+        .nav-link:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(24, 54, 35, 0.08);
+        }
+
+        .status-bar {
+            min-height: 22px;
+            padding: 8px 18px 0;
+            font-size: 13px;
+        }
+
+        .status-bar.is-error {
+            color: #b42318;
+        }
+
+        .status-bar.is-success {
+            color: var(--accent-strong);
+        }
+
+        .messages-shell {
+            padding: 14px 18px 18px;
+        }
+
+        .messages-layout {
+            display: grid;
+            grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+            gap: 16px;
+            min-height: calc(100vh - 170px);
+        }
+
+        .panel {
+            background: var(--card-bg);
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            box-shadow: var(--shadow);
+        }
+
+        .sidebar-panel {
+            padding: 16px;
+            display: grid;
+            grid-template-rows: auto auto 1fr;
+            gap: 14px;
+        }
+
+        .profile-mini {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 22px;
+            background: var(--soft-bg);
+            border: 1px solid rgba(47, 143, 98, 0.1);
+        }
+
+        .profile-mini-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 18px;
+        }
+
+        .profile-mini-copy {
+            min-width: 0;
+        }
+
+        .profile-mini-copy strong,
+        .conversation-name {
+            display: block;
+            font-size: 15px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .search-box input {
+            width: 100%;
+            border: 1px solid var(--line);
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 13px 14px;
+            color: var(--text);
+        }
+
+        .conversation-list {
+            display: grid;
+            gap: 10px;
+            align-content: start;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .conversation-item {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 22px;
+            border: 1px solid transparent;
+            background: rgba(246, 251, 247, 0.96);
+            text-align: left;
+        }
+
+        .conversation-item.is-active {
+            background: linear-gradient(135deg, rgba(47, 143, 98, 0.14), rgba(255, 255, 255, 0.98));
+            border-color: rgba(47, 143, 98, 0.22);
+        }
+
+        .conversation-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 18px;
+            flex-shrink: 0;
+        }
+
+        .conversation-main {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .conversation-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+
+        .conversation-preview {
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .conversation-badge {
+            min-width: 24px;
+            height: 24px;
+            padding: 0 8px;
+            display: inline-grid;
+            place-items: center;
+            border-radius: 999px;
+            background: var(--accent);
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .chat-panel {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 18px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(247, 251, 248, 0.94);
+        }
+
+        .chat-header-main {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .chat-back {
+            display: none;
+        }
+
+        .chat-avatar {
+            width: 54px;
+            height: 54px;
+            border-radius: 18px;
+        }
+
+        .chat-thread {
+            padding: 18px;
+            overflow-y: auto;
+            background:
+                linear-gradient(180deg, rgba(248, 252, 249, 0.98), rgba(233, 244, 236, 0.98)),
+                radial-gradient(circle at top right, rgba(105, 181, 130, 0.14), transparent 30%);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .chat-thread.is-empty {
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .message-row {
+            max-width: min(78%, 540px);
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .message-row.incoming {
+            margin-right: auto;
+        }
+
+        .message-row.outgoing {
+            margin-left: auto;
+            justify-content: flex-end;
+        }
+
+        .message-bubble {
+            padding: 12px 14px 10px;
+            border-radius: 22px;
+            box-shadow: 0 12px 24px rgba(24, 54, 35, 0.08);
+        }
+
+        .message-row.incoming .message-bubble {
+            background: #ffffff;
+            border: 1px solid rgba(20, 48, 32, 0.08);
+            border-bottom-left-radius: 10px;
+        }
+
+        .message-row.outgoing .message-bubble {
+            background: linear-gradient(135deg, #dcefe1, #eef8f1);
+            border: 1px solid rgba(47, 143, 98, 0.12);
+            border-bottom-right-radius: 10px;
+        }
+
+        .message-text {
+            line-height: 1.6;
+            word-break: break-word;
+        }
+
+        .thread-meta {
+            margin-top: 6px;
+            font-size: 12px;
+            text-align: right;
+        }
+
+        .chat-composer {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            padding: 16px 18px 18px;
+            border-top: 1px solid var(--line);
+            background: rgba(248, 252, 249, 0.94);
+        }
+
+        .chat-composer input {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 14px 16px;
+            background: #ffffff;
+            color: var(--text);
+        }
+
+        .empty-state {
+            padding: 24px;
+            color: var(--muted);
+        }
+
+        .empty-state strong {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--text);
+        }
+
+        .bottom-nav {
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 14px 18px 18px;
+        }
+
+        .nav-link.is-active {
+            background: linear-gradient(135deg, rgba(47, 143, 98, 0.14), rgba(255, 255, 255, 0.98));
+            border-color: rgba(47, 143, 98, 0.22);
+            color: var(--accent-strong);
+        }
+
+        @media (max-width: 900px) {
+            .messages-layout {
+                grid-template-columns: 1fr;
+            }
+
+            body.chat-open .sidebar-panel {
+                display: none;
+            }
+
+            .chat-back {
+                display: inline-flex;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .topbar,
+            .messages-shell,
+            .bottom-nav {
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+
+            .chat-header,
+            .chat-thread,
+            .chat-composer,
+            .sidebar-panel {
+                padding-left: 14px;
+                padding-right: 14px;
+            }
+
+            .chat-composer {
+                grid-template-columns: 1fr;
+            }
+
+            .message-row {
+                max-width: 88%;
+            }
+
+            .topbar-actions {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="topbar-main">
+                <img id="brandAvatar" class="brand-avatar" src="ilogo.png" alt="instaJOY">
+                <div class="topbar-copy">
+                    <h1>Messages</h1>
+                    <p>Social inbox with real conversations</p>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <a class="ghost-btn" href="index.html#home">Feed</a>
+                <a id="topbarProfileLink" class="primary-btn" href="index.html#profile">Profile</a>
+            </div>
+        </header>
+
+        <div id="statusBar" class="status-bar" aria-live="polite"></div>
+
+        <main class="messages-shell">
+            <div class="messages-layout">
+                <aside id="sidebarPanel" class="panel sidebar-panel">
+                    <div class="profile-mini">
+                        <img id="currentUserAvatar" class="profile-mini-avatar" src="ilogo.png" alt="Your profile">
+                        <div class="profile-mini-copy">
+                            <strong id="currentUserName">instaJOY</strong>
+                            <span id="currentUserHandle">Your inbox</span>
+                        </div>
+                    </div>
+
+                    <label class="search-box">
+                        <input id="conversationSearch" type="search" placeholder="Search conversations">
+                    </label>
+
+                    <div id="conversationList" class="conversation-list" aria-live="polite"></div>
+                </aside>
+
+                <section class="panel chat-panel">
+                    <div class="chat-header">
+                        <div class="chat-header-main">
+                            <button id="chatBackButton" class="ghost-btn chat-back" type="button">Back</button>
+                            <img id="activeChatAvatar" class="chat-avatar" src="ilogo.png" alt="Chat avatar">
+                            <div class="chat-copy">
+                                <h2 id="activeChatName">Choose a chat</h2>
+                                <p id="activeChatMeta">Open a conversation from the list to start messaging.</p>
+                            </div>
+                        </div>
+                        <div class="chat-actions">
+                            <a id="chatProfileLink" class="ghost-btn" href="index.html#profile">Profile</a>
+                        </div>
+                    </div>
+
+                    <div id="chatThread" class="chat-thread is-empty">
+                        <div class="empty-state">
+                            <strong>Your messages live here</strong>
+                            <div class="empty-copy">This page looks chat-first like WhatsApp, while keeping profile-aware social messaging for instaJOY.</div>
+                        </div>
+                    </div>
+
+                    <form id="chatComposer" class="chat-composer" hidden>
+                        <input id="messageInput" type="text" maxlength="1000" placeholder="Write a message">
+                        <button id="sendButton" class="primary-btn" type="submit">Send</button>
+                    </form>
+                </section>
+            </div>
+        </main>
+
+        <nav class="bottom-nav">
+            <a class="nav-link" href="index.html#home">Home</a>
+            <a class="nav-link is-active" href="massage.html">Messages</a>
+            <a id="bottomProfileLink" class="nav-link" href="index.html#profile">Profile</a>
+        </nav>
+    </div>
+
+    <script src="frontend/js/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.43.4"></script>
+    <script src="frontend/js/auth-supabase.js"></script>
+    <script>
+        (function initMassagePage() {
+            const DEFAULT_AVATAR = (window.INSTAJOY_CONFIG && window.INSTAJOY_CONFIG.DEFAULT_AVATAR) || 'ilogo.png';
+            const state = {
+                user: null,
+                profile: null,
+                conversations: [],
+                activeUser: null,
+                threads: {},
+                search: '',
+                realtimeChannel: null,
+            };
+
+            const dom = {};
+
+            document.addEventListener('DOMContentLoaded', init);
+
+            async function init() {
+                cacheDom();
+                bindEvents();
+                await boot();
+            }
+
+            function cacheDom() {
+                dom.statusBar = document.getElementById('statusBar');
+                dom.brandAvatar = document.getElementById('brandAvatar');
+                dom.currentUserAvatar = document.getElementById('currentUserAvatar');
+                dom.currentUserName = document.getElementById('currentUserName');
+                dom.currentUserHandle = document.getElementById('currentUserHandle');
+                dom.topbarProfileLink = document.getElementById('topbarProfileLink');
+                dom.bottomProfileLink = document.getElementById('bottomProfileLink');
+                dom.conversationSearch = document.getElementById('conversationSearch');
+                dom.conversationList = document.getElementById('conversationList');
+                dom.chatBackButton = document.getElementById('chatBackButton');
+                dom.activeChatAvatar = document.getElementById('activeChatAvatar');
+                dom.activeChatName = document.getElementById('activeChatName');
+                dom.activeChatMeta = document.getElementById('activeChatMeta');
+                dom.chatProfileLink = document.getElementById('chatProfileLink');
+                dom.chatThread = document.getElementById('chatThread');
+                dom.chatComposer = document.getElementById('chatComposer');
+                dom.messageInput = document.getElementById('messageInput');
+                dom.sendButton = document.getElementById('sendButton');
+            }
+
+            function bindEvents() {
+                dom.conversationSearch.addEventListener('input', (event) => {
+                    state.search = String(event.target.value || '').trim().toLowerCase();
+                    renderConversationList();
+                });
+
+                dom.chatBackButton.addEventListener('click', () => {
+                    state.activeUser = null;
+                    updateActiveConversationUrl();
+                    renderConversationList();
+                    renderActiveConversation();
+                });
+
+                dom.chatComposer.addEventListener('submit', handleMessageSubmit);
+
+                window.addEventListener('beforeunload', () => {
+                    if (state.realtimeChannel && typeof state.realtimeChannel.unsubscribe === 'function') {
+                        state.realtimeChannel.unsubscribe().catch(() => {});
+                    }
+                });
+            }
+
+            async function boot() {
+                if (!window.SupabaseAuth) {
+                    showStatus('Authentication is unavailable on this page.', 'error');
+                    renderSignedOutState();
+                    return;
+                }
+
+                const auth = await window.SupabaseAuth.init();
+                if (!auth.user) {
+                    renderSignedOutState();
+                    return;
+                }
+
+                state.user = auth.user;
+                await loadCurrentProfile();
+                await loadConversations();
+                await openInitialConversation();
+                setupRealtime();
+            }
+
+            function renderSignedOutState() {
+                dom.conversationList.innerHTML = '<div class="empty-state"><strong>Login required</strong><div class="empty-copy">Open the main app and sign in to see your conversations.</div></div>';
+                dom.chatThread.classList.add('is-empty');
+                dom.chatThread.innerHTML = '<div class="empty-state"><strong>Messages are private</strong><div class="empty-copy">Sign in first, then come back here to chat with people you discover on instaJOY.</div></div>';
+                dom.chatComposer.hidden = true;
+            }
+
+            async function loadCurrentProfile() {
+                const profile = await fetchProfileById(state.user.id);
+                state.profile = profile || {
+                    id: state.user.id,
+                    username: state.user.user_metadata && state.user.user_metadata.username ? state.user.user_metadata.username : 'member',
+                    avatar_url: DEFAULT_AVATAR,
+                };
+
+                const avatar = state.profile.avatar_url || DEFAULT_AVATAR;
+                const username = state.profile.username || 'member';
+                dom.brandAvatar.src = avatar;
+                dom.currentUserAvatar.src = avatar;
+                dom.currentUserName.textContent = username;
+                dom.currentUserHandle.textContent = '@' + username;
+                dom.topbarProfileLink.href = 'index.html#profile-' + encodeURIComponent(username);
+                dom.bottomProfileLink.href = 'index.html#profile-' + encodeURIComponent(username);
+            }
+
+            async function loadConversations() {
+                try {
+                    state.conversations = await fetchConversationList();
+                    renderConversationList();
+                } catch (error) {
+                    showStatus(error.message || 'Could not load conversations.', 'error');
+                }
+            }
+
+            function renderConversationList() {
+                const activeId = state.activeUser && state.activeUser.id;
+                const filtered = (state.conversations || []).filter((conversation) => {
+                    if (!state.search) {
+                        return true;
+                    }
+                    const haystack = [
+                        conversation.user.username,
+                        conversation.lastMessage.text,
+                    ].join(' ').toLowerCase();
+                    return haystack.includes(state.search);
+                });
+
+                if (!filtered.length) {
+                    dom.conversationList.innerHTML = '<div class="empty-state"><strong>No conversations</strong><div class="empty-copy">Start messaging people from profiles, search, or suggestions.</div></div>';
+                    return;
+                }
+
+                dom.conversationList.innerHTML = filtered.map((conversation) => {
+                    const active = activeId === conversation.user.id;
+                    const unreadBadge = conversation.unreadCount
+                        ? '<span class="conversation-badge">' + escapeHtml(String(conversation.unreadCount)) + '</span>'
+                        : '';
+                    return (
+                        '<button class="conversation-item' + (active ? ' is-active' : '') + '" type="button" data-user-id="' + escapeHtml(conversation.user.id) + '">' +
+                            '<img class="conversation-avatar" src="' + escapeHtml(getAvatar(conversation.user.profileImage)) + '" alt="' + escapeHtml(conversation.user.username) + '">' +
+                            '<div class="conversation-main">' +
+                                '<div class="conversation-head">' +
+                                    '<strong class="conversation-name">' + escapeHtml(conversation.user.username) + '</strong>' +
+                                    '<span class="conversation-time">' + escapeHtml(formatDateTime(conversation.lastMessage.createdAt)) + '</span>' +
+                                '</div>' +
+                                '<div class="conversation-preview">' + escapeHtml(truncateText(conversation.lastMessage.text, 58)) + '</div>' +
+                            '</div>' +
+                            unreadBadge +
+                        '</button>'
+                    );
+                }).join('');
+
+                dom.conversationList.querySelectorAll('.conversation-item').forEach((button) => {
+                    button.addEventListener('click', async () => {
+                        const selected = state.conversations.find((conversation) => conversation.user.id === button.dataset.userId);
+                        if (selected) {
+                            await openConversation(selected.user);
+                        }
+                    });
+                });
+            }
+
+            async function openInitialConversation() {
+                const params = new URLSearchParams(window.location.search);
+                const targetUserId = String(params.get('user') || '').trim();
+                const targetUsername = String(params.get('username') || '').trim();
+
+                if (targetUserId) {
+                    const existingConversation = state.conversations.find((conversation) => conversation.user.id === targetUserId);
+                    if (existingConversation) {
+                        await openConversation(existingConversation.user);
+                        return;
+                    }
+
+                    const profile = await fetchProfileById(targetUserId);
+                    if (profile) {
+                        await openConversation({
+                            id: profile.id,
+                            username: profile.username,
+                            profileImage: profile.avatar_url || DEFAULT_AVATAR,
+                        });
+                        return;
+                    }
+                }
+
+                if (targetUsername) {
+                    const existingByName = state.conversations.find((conversation) => conversation.user.username === targetUsername);
+                    if (existingByName) {
+                        await openConversation(existingByName.user);
+                        return;
+                    }
+                }
+
+                if (window.innerWidth > 900 && state.conversations[0]) {
+                    await openConversation(state.conversations[0].user);
+                    return;
+                }
+
+                renderActiveConversation();
+            }
+
+            async function openConversation(user) {
+                state.activeUser = user;
+                document.body.classList.add('chat-open');
+                updateActiveConversationUrl();
+                renderConversationList();
+                renderActiveConversation();
+                await loadConversationMessages(user.id);
+            }
+
+            function updateActiveConversationUrl() {
+                const url = new URL(window.location.href);
+                if (state.activeUser) {
+                    url.searchParams.set('user', state.activeUser.id);
+                    url.searchParams.set('username', state.activeUser.username || '');
+                } else {
+                    url.searchParams.delete('user');
+                    url.searchParams.delete('username');
+                    url.searchParams.delete('avatar');
+                    document.body.classList.remove('chat-open');
+                }
+                window.history.replaceState({}, '', url.toString());
+            }
+
+            async function loadConversationMessages(otherUserId) {
+                try {
+                    state.threads[otherUserId] = await fetchConversationMessages(otherUserId);
+                    renderActiveConversation();
+                    await loadConversations();
+                } catch (error) {
+                    showStatus(error.message || 'Could not load messages.', 'error');
+                }
+            }
+
+            function renderActiveConversation() {
+                const activeUser = state.activeUser;
+
+                if (!activeUser) {
+                    dom.activeChatAvatar.src = DEFAULT_AVATAR;
+                    dom.activeChatName.textContent = 'Choose a chat';
+                    dom.activeChatMeta.textContent = 'Open a conversation from the list to start messaging.';
+                    dom.chatProfileLink.href = 'index.html#profile';
+                    dom.chatThread.className = 'chat-thread is-empty';
+                    dom.chatThread.innerHTML = '<div class="empty-state"><strong>Your messages live here</strong><div class="empty-copy">Select someone to see the thread or start a new conversation from a profile.</div></div>';
+                    dom.chatComposer.hidden = true;
+                    return;
+                }
+
+                dom.activeChatAvatar.src = getAvatar(activeUser.profileImage || activeUser.avatar);
+                dom.activeChatName.textContent = activeUser.username || 'member';
+                dom.activeChatMeta.textContent = 'Private social conversation';
+                dom.chatProfileLink.href = 'index.html#profile-' + encodeURIComponent(activeUser.username || '');
+                dom.chatThread.className = 'chat-thread';
+                dom.chatComposer.hidden = false;
+                dom.messageInput.placeholder = 'Message ' + (activeUser.username || 'member');
+
+                const messages = state.threads[activeUser.id] || [];
+                if (!messages.length) {
+                    dom.chatThread.classList.add('is-empty');
+                    dom.chatThread.innerHTML = '<div class="empty-state"><strong>No messages yet</strong><div class="empty-copy">Say hello and start the conversation.</div></div>';
+                    return;
+                }
+
+                dom.chatThread.innerHTML = messages.map((message) => renderMessageRow(message)).join('');
+                dom.chatThread.scrollTop = dom.chatThread.scrollHeight;
+            }
+
+            function renderMessageRow(message) {
+                const outgoing = message.senderId === state.user.id;
+                const seenText = outgoing && message.readAt ? ' • seen' : '';
+                return (
+                    '<div class="message-row ' + (outgoing ? 'outgoing' : 'incoming') + '">' +
+                        '<div class="message-bubble">' +
+                            '<div class="message-text">' + escapeHtml(message.text) + '</div>' +
+                            '<div class="thread-meta">' + escapeHtml(formatDateTime(message.createdAt) + seenText) + '</div>' +
+                        '</div>' +
+                    '</div>'
+                );
+            }
+
+            async function handleMessageSubmit(event) {
+                event.preventDefault();
+
+                if (!state.activeUser) {
+                    return;
+                }
+
+                const text = String(dom.messageInput.value || '').trim();
+                if (!text) {
+                    return;
+                }
+
+                dom.sendButton.disabled = true;
+
+                try {
+                    const client = getClient();
+                    const { data, error } = await client
+                        .from('messages')
+                        .insert({
+                            sender_id: state.user.id,
+                            receiver_id: state.activeUser.id,
+                            body: text,
+                        })
+                        .select('id, sender_id, receiver_id, body, read_at, created_at')
+                        .single();
+
+                    if (error) {
+                        throw error;
+                    }
+
+                    const nextMessage = {
+                        id: data.id,
+                        senderId: data.sender_id,
+                        receiverId: data.receiver_id,
+                        text: data.body,
+                        createdAt: data.created_at,
+                        readAt: data.read_at,
+                    };
+
+                    state.threads[state.activeUser.id] = (state.threads[state.activeUser.id] || []).concat(nextMessage);
+                    dom.messageInput.value = '';
+                    renderActiveConversation();
+                    await loadConversations();
+                    showStatus('Message sent.', 'success');
+                } catch (error) {
+                    showStatus(error.message || 'Could not send message.', 'error');
+                } finally {
+                    dom.sendButton.disabled = false;
+                }
+            }
+
+            function setupRealtime() {
+                const client = window.supabaseClient;
+                if (!client || !client.channel || !state.user || state.realtimeChannel) {
+                    return;
+                }
+
+                state.realtimeChannel = client
+                    .channel('instajoy-massage-' + state.user.id)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'messages',
+                            filter: 'receiver_id=eq.' + state.user.id,
+                        },
+                        async () => {
+                            await loadConversations();
+                            if (state.activeUser) {
+                                await loadConversationMessages(state.activeUser.id);
+                            }
+                        }
+                    )
+                    .subscribe();
+            }
+
+            async function fetchConversationList() {
+                const client = getClient();
+                const { data, error } = await client
+                    .from('messages')
+                    .select('id, sender_id, receiver_id, body, read_at, created_at')
+                    .or('sender_id.eq.' + state.user.id + ',receiver_id.eq.' + state.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(200);
+
+                if (error) {
+                    throw error;
+                }
+
+                const grouped = new Map();
+                const otherIds = new Set();
+
+                (data || []).forEach((message) => {
+                    const otherUserId = message.sender_id === state.user.id ? message.receiver_id : message.sender_id;
+                    otherIds.add(otherUserId);
+
+                    if (!grouped.has(otherUserId)) {
+                        grouped.set(otherUserId, {
+                            userId: otherUserId,
+                            lastMessage: {
+                                text: message.body,
+                                createdAt: message.created_at,
+                            },
+                            unreadCount: message.receiver_id === state.user.id && !message.read_at ? 1 : 0,
+                        });
+                        return;
+                    }
+
+                    if (message.receiver_id === state.user.id && !message.read_at) {
+                        grouped.get(otherUserId).unreadCount += 1;
+                    }
+                });
+
+                const profilesMap = await fetchProfilesMap(Array.from(otherIds));
+                return Array.from(grouped.values()).map((conversation) => {
+                    const profile = profilesMap.get(conversation.userId);
+                    return {
+                        user: {
+                            id: conversation.userId,
+                            username: profile && profile.username ? profile.username : 'member',
+                            profileImage: profile && profile.avatar_url ? profile.avatar_url : DEFAULT_AVATAR,
+                        },
+                        lastMessage: conversation.lastMessage,
+                        unreadCount: conversation.unreadCount,
+                    };
+                });
+            }
+
+            async function fetchConversationMessages(otherUserId) {
+                const client = getClient();
+                const { data, error } = await client
+                    .from('messages')
+                    .select('id, sender_id, receiver_id, body, read_at, created_at')
+                    .or('and(sender_id.eq.' + state.user.id + ',receiver_id.eq.' + otherUserId + '),and(sender_id.eq.' + otherUserId + ',receiver_id.eq.' + state.user.id + ')')
+                    .order('created_at', { ascending: true })
+                    .limit(200);
+
+                if (error) {
+                    throw error;
+                }
+
+                await client
+                    .from('messages')
+                    .update({ read_at: new Date().toISOString() })
+                    .eq('sender_id', otherUserId)
+                    .eq('receiver_id', state.user.id)
+                    .is('read_at', null);
+
+                return (data || []).map((message) => ({
+                    id: message.id,
+                    senderId: message.sender_id,
+                    receiverId: message.receiver_id,
+                    text: message.body,
+                    createdAt: message.created_at,
+                    readAt: message.read_at,
+                }));
+            }
+
+            async function fetchProfilesMap(userIds) {
+                const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+                const map = new Map();
+                if (!ids.length) {
+                    return map;
+                }
+
+                const client = getClient();
+                const { data, error } = await client
+                    .from('profiles')
+                    .select('id, username, avatar_url')
+                    .in('id', ids);
+
+                if (error) {
+                    throw error;
+                }
+
+                (data || []).forEach((profile) => {
+                    map.set(profile.id, profile);
+                });
+
+                return map;
+            }
+
+            async function fetchProfileById(userId) {
+                const client = getClient();
+                const { data, error } = await client
+                    .from('profiles')
+                    .select('id, username, bio, avatar_url')
+                    .eq('id', userId)
+                    .maybeSingle();
+
+                if (error) {
+                    throw error;
+                }
+
+                return data || null;
+            }
+
+            function getClient() {
+                if (!window.supabaseClient) {
+                    throw new Error('Supabase client is unavailable.');
+                }
+                return window.supabaseClient;
+            }
+
+            function getAvatar(value) {
+                return value || DEFAULT_AVATAR;
+            }
+
+            function truncateText(value, limit) {
+                const text = String(value || '');
+                return text.length > limit ? text.slice(0, limit - 1) + '…' : text;
+            }
+
+            function formatDateTime(value) {
+                const date = new Date(value);
+                if (Number.isNaN(date.getTime())) {
+                    return 'just now';
+                }
+
+                const diffMs = Date.now() - date.getTime();
+                const diffMinutes = Math.round(diffMs / 60000);
+
+                if (diffMinutes < 1) {
+                    return 'just now';
+                }
+                if (diffMinutes < 60) {
+                    return diffMinutes + 'm ago';
+                }
+
+                const diffHours = Math.round(diffMinutes / 60);
+                if (diffHours < 24) {
+                    return diffHours + 'h ago';
+                }
+
+                const diffDays = Math.round(diffHours / 24);
+                if (diffDays < 7) {
+                    return diffDays + 'd ago';
+                }
+
+                return date.toLocaleDateString();
+            }
+
+            function showStatus(message, type) {
+                dom.statusBar.textContent = message || '';
+                dom.statusBar.className = 'status-bar' + (type ? ' is-' + type : '');
+                if (!message) {
+                    return;
+                }
+                window.clearTimeout(showStatus._timer);
+                showStatus._timer = window.setTimeout(() => {
+                    dom.statusBar.textContent = '';
+                    dom.statusBar.className = 'status-bar';
+                }, 2600);
+            }
+
+            function escapeHtml(value) {
+                return String(value || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+        })();
+    </script>
+</body>
+</html>

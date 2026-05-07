@@ -238,6 +238,13 @@
             color: #475569;
         }
 
+        .profile-summary-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
         .stories-shell {
             display: flex;
             align-items: flex-start;
@@ -557,6 +564,42 @@
             background: #eef3fb;
             margin-bottom: 14px;
             display: block;
+        }
+
+        .post-carousel {
+            position: relative;
+            margin-bottom: 14px;
+        }
+
+        .post-carousel-track {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: 100%;
+            gap: 10px;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scrollbar-width: none;
+        }
+
+        .post-carousel-track::-webkit-scrollbar {
+            display: none;
+        }
+
+        .post-carousel-slide {
+            scroll-snap-align: start;
+        }
+
+        .post-carousel-index {
+            position: absolute;
+            right: 14px;
+            bottom: 14px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.72);
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 700;
+            backdrop-filter: blur(12px);
         }
 
         .post-text {
@@ -1513,6 +1556,17 @@
                 margin: 0;
             }
 
+            .suggestion-card {
+                flex-wrap: wrap;
+            }
+
+            .suggestion-actions {
+                width: 100%;
+                flex-direction: row;
+                justify-content: flex-end;
+                flex-wrap: wrap;
+            }
+
             .stories-shell {
                 gap: 18px;
                 padding: 0 2px 14px;
@@ -1718,12 +1772,20 @@
 
         .suggestion-card {
             display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 14px;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 16px;
             border-radius: 18px;
-            background: #eef7ff;
+            background: linear-gradient(180deg, #f6fbff, #eef7ff);
             border: 1px solid rgba(59, 130, 246, 0.12);
+        }
+
+        .suggestion-profile-button {
+            flex-shrink: 0;
+            padding: 0;
+            border: none;
+            background: transparent;
+            cursor: pointer;
         }
 
         .suggestion-avatar {
@@ -1772,6 +1834,12 @@
             flex-direction: column;
             gap: 8px;
             align-items: flex-end;
+            margin-left: auto;
+        }
+
+        .suggestion-actions .ghost-button,
+        .suggestion-actions .follow-button {
+            min-width: 100px;
         }
 
         .follow-button {
@@ -1938,6 +2006,13 @@
             font-weight: 600;
             color: #1f2937;
             cursor: pointer;
+        }
+
+        .form-helper {
+            margin: 0;
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1.6;
         }
 
         .form-group input[type="checkbox"] {
@@ -2963,6 +3038,17 @@
         }
 
         @media (max-width: 640px) {
+            .profile-summary-actions {
+                flex-direction: column;
+            }
+
+            .profile-summary-actions .ghost-button,
+            .profile-summary-actions .primary-button,
+            .suggestion-actions .ghost-button,
+            .suggestion-actions .follow-button {
+                width: 100%;
+            }
+
             .message-row {
                 max-width: 88%;
             }
@@ -3046,13 +3132,17 @@
                     <aside class="home-right">
                         <section class="profile-summary-card">
                             <div class="profile-summary-row">
-                                <img class="avatar profile-avatar" src="ilogo.png" alt="Your avatar">
+                                <img id="profileSidebarAvatar" class="avatar profile-avatar" src="ilogo.png" alt="Your avatar">
                                 <div>
                                     <strong id="profileSidebarName">instaJOY</strong>
-                                    <span class="profile-sidebar-role">Your social feed</span>
+                                    <span id="profileSidebarRole" class="profile-sidebar-role">Your social feed</span>
                                 </div>
                             </div>
                             <p class="profile-sidebar-text">Keep your home feed lively by following interesting creators and sharing what inspires you.</p>
+                            <div class="profile-summary-actions">
+                                <button class="ghost-button compact" type="button" data-view="profile">Open profile</button>
+                                <button class="primary-button compact" type="button" data-action="open-create-post">Create post</button>
+                            </div>
                         </section>
                         <section class="home-suggestion-panel">
                             <div class="suggestion-header">
@@ -3249,14 +3339,6 @@
                         <!-- Text Post Section -->
                         <fieldset id="textSection" class="form-section active">
                             <legend>Text Post</legend>
-                            
-                            <select id="postCategory" class="form-input">
-                                <option value="">Select post type</option>
-                                <option value="jokes">😄 Jokes</option>
-                                <option value="ideas">💡 Ideas</option>
-                                <option value="fun-knowledge">🎓 Fun Knowledge</option>
-                            </select>
-
                             <textarea id="postContent" class="form-input" placeholder="What's on your mind?" rows="6" maxlength="500"></textarea>
                             <div class="char-count"><span id="charCount">0</span>/500</div>
                         </fieldset>
@@ -3340,35 +3422,25 @@
                         </fieldset>
 
                         <!-- Common Fields -->
-                        <fieldset class="form-section" id="commonFields">
-                            <legend>Additional Info</legend>
-                            
-                            <input id="hashtags" type="text" class="form-input" placeholder="Add hashtags (e.g., #instaJOY #fun)" maxlength="200">
-                            
-                            <input id="location" type="text" class="form-input" placeholder="Add location (optional)" maxlength="100">
-                            
+                        <fieldset class="form-section active" id="commonFields">
+                            <legend>Post Mood</legend>
+
                             <div class="form-group">
-                                <label for="privacy">Privacy</label>
-                                <select id="privacy" class="form-input">
-                                    <option value="public">🌍 Public</option>
-                                    <option value="friends" selected>👥 Friends only</option>
-                                    <option value="private">🔒 Private</option>
+                                <label for="postCategory">Select mood</label>
+                                <select id="postCategory" class="form-input">
+                                    <option value="">Select post mood</option>
+                                    <option value="happy">😄 Happy</option>
+                                    <option value="motivation">🔥 Motivation</option>
+                                    <option value="calm">😌 Calm</option>
+                                    <option value="music">🎵 Music</option>
+                                    <option value="fun">😂 Fun</option>
+                                    <option value="learn">📚 Learn</option>
+                                    <option value="explore">🌍 Explore</option>
+                                    <option value="mixed">⭐ Mixed</option>
                                 </select>
                             </div>
 
-                            <div class="form-group">
-                                <label for="allowComments">
-                                    <input id="allowComments" type="checkbox" checked>
-                                    Allow comments
-                                </label>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="allowLikes">
-                                    <input id="allowLikes" type="checkbox" checked>
-                                    Show like count
-                                </label>
-                            </div>
+                            <p id="postMoodHint" class="form-helper">Pick the mood that best matches this post so it lands in the right feed.</p>
                         </fieldset>
 
                         <!-- Progress Bar -->

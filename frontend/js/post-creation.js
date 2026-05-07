@@ -10,6 +10,16 @@
   const MAX_IMAGE_WIDTH = 1080;
   const MAX_CAROUSEL_PHOTOS = 10;
   const MIN_VIDEO_CLIP_SECONDS = 1;
+  const MOOD_COPY = {
+    happy: 'Bright, joyful, and uplifting moments.',
+    motivation: 'Wins, discipline, goals, and inspiring progress.',
+    calm: 'Peaceful thoughts, mindful pauses, and soft energy.',
+    music: 'Songs, playlists, concerts, and audio vibes.',
+    fun: 'Laughs, memes, playful updates, and social energy.',
+    learn: 'Lessons, tips, tutorials, and useful knowledge.',
+    explore: 'Travel, discovery, outdoors, and fresh places.',
+    mixed: 'A little bit of everything for a broad audience.',
+  };
 
   const IMAGE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.mjs';
   const IMAGE_WORKER_LIB_URL = 'https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js';
@@ -136,6 +146,7 @@
 
         commonFields: document.getElementById('commonFields'),
         textSection: document.getElementById('textSection'),
+        postMoodHint: document.getElementById('postMoodHint'),
       };
     },
 
@@ -159,6 +170,7 @@
       this.dom.form?.addEventListener('submit', (event) => this.handleSubmit(event));
 
       this.dom.postContent?.addEventListener('input', () => this.updateCharCount('postContent', 'charCount'));
+      this.dom.postCategory?.addEventListener('change', () => this.updateMoodGuidance());
       this.dom.photoCaption?.addEventListener('input', () => this.updateCharCount('photoCaption', 'photoCaptionCount'));
       this.dom.carouselCaption?.addEventListener('input', () => this.updateCharCount('carouselCaption', 'carouselCaptionCount'));
       this.dom.videoCaption?.addEventListener('input', () => this.updateCharCount('videoCaption', 'videoCaptionCount'));
@@ -223,6 +235,8 @@
         section.classList.toggle('active', isActive);
         section.hidden = !isActive;
       });
+
+      this.updateMoodGuidance();
     },
 
     async handlePhotoSelect(event) {
@@ -514,6 +528,12 @@
 
     validatePost() {
       const type = this.state.postType;
+      const category = this.dom.postCategory?.value || '';
+
+      if (!category) {
+        this.showError('Please choose a mood for this post.');
+        return false;
+      }
 
       if (type === 'text') {
         const content = this.dom.postContent?.value.trim() || '';
@@ -557,7 +577,7 @@
       return {
         user_id: user.id,
         type,
-        category: type === 'text' ? (this.dom.postCategory?.value || null) : null,
+        category: this.dom.postCategory?.value || null,
         caption: this.getCaption(),
         content: type === 'text' ? (this.dom.postContent?.value.trim() || '') : null,
       };
@@ -1023,12 +1043,21 @@
         throw new Error('Supabase not initialized.');
       }
 
+      const carouselContent = post.carousel_urls?.length
+        ? JSON.stringify({
+            text: post.caption || '',
+            carousel_urls: post.carousel_urls,
+          })
+        : null;
+
       const insertPayload = {
         user_id: post.user_id,
         type: post.type,
-        category: post.type === 'text' ? post.category : null,
+        category: post.category || null,
         caption: post.caption || (post.type === 'text' ? post.content : '') || null,
-        content: post.type === 'text' ? (post.content || post.caption || '') : null,
+        content: post.type === 'text'
+          ? (post.content || post.caption || '')
+          : (post.carousel_urls?.length ? carouselContent : null),
         image_url: post.type === 'image' ? (post.image_url || post.carousel_urls?.[0] || null) : null,
         media_url: post.type === 'reel' ? (post.media_url || null) : null,
       };
@@ -1114,6 +1143,30 @@
       this.hideProgress();
       this.hideVideoTrimControls();
       this.selectPostType('text');
+    },
+
+    updateMoodGuidance() {
+      const mood = this.dom.postCategory?.value || '';
+      const moodCopy = MOOD_COPY[mood] || 'Pick the mood that best matches this post so it lands in the right feed.';
+      if (this.dom.postMoodHint) {
+        this.dom.postMoodHint.textContent = moodCopy;
+      }
+
+      const textPlaceholder = mood ? `Share something ${mood}...` : "What's on your mind?";
+      const mediaPlaceholder = mood ? `Add a ${mood} caption (optional)` : 'Add caption (optional)';
+
+      if (this.dom.postContent) {
+        this.dom.postContent.placeholder = textPlaceholder;
+      }
+      if (this.dom.photoCaption) {
+        this.dom.photoCaption.placeholder = mediaPlaceholder;
+      }
+      if (this.dom.carouselCaption) {
+        this.dom.carouselCaption.placeholder = mediaPlaceholder;
+      }
+      if (this.dom.videoCaption) {
+        this.dom.videoCaption.placeholder = mediaPlaceholder;
+      }
     },
 
     openModal() {
